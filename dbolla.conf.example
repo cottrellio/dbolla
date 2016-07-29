@@ -1,0 +1,20 @@
+[irc:freenode]
+# Address to the server Defaut: irc.freenode.org
+server=irc.freenode.org
+# Port to the server Default: 6697
+port=6697
+# Use SSL | default: true
+ssl=true
+# The nickname the bot should use
+nick=warmachine
+# Shows up in Real Name
+name=War Machine
+# Password to connect to the server
+password=
+
+[slack:myslack]
+# In your Slack account go to the admin section followed by
+# "Custom Integrations". Click on bots and create a new bot user.
+
+# Slack bot API token
+token=xoxb-random_acharacters

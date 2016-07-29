@@ -1,0 +1,23 @@
+* Setting up the bot
+D'bolla is a no bullshit extensible IRC/Slack bot written for Python 3.5 using
+asyncio.
+
+** Install dependencies:
+
+#+BEGIN_SRC bash
+    pip install websockets
+#+END_SRC
+
+** Configure
+Copy dbolla.conf.example to dbolla.conf and edit this file. You can
+specify multiples of the same connection by prefixing the config section with
+'slack:' or 'irc:' followed by a unique name for this connection.
+
+** Running
+Simply run the command:
+
+#+BEGIN_SRC bash
+    ./bin/dbolla -c /path/to/my/dbolla.conf
+#+END_SRC
+
+* Writing a Plugin

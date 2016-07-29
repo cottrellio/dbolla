@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+# -*- mode: python -*-
+import asyncio
+import functools
+import logging.config
+
+from warmachine.config import Config
+from warmachine.connections.irc import AioIRC
+from warmachine.connections.slack import SlackWS
+
+logging.config.dictConfig({
+    'version': 1,
+    'disable_existing_loggers': False,
+
+    'formatters': {
+        'standard': {
+            'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        }
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'level': 'DEBUG',
+            'formatter': 'standard',
+        },
+    },
+    'loggers': {
+        'websockets': {
+            'level': 'INFO',
+            'handlers': ['console', ]
+        },
+        '': {
+            'level': 'DEBUG',
+            'handlers': ['console', ]
+        }
+    }
+})
+
+
+class Bot(object):
+    def __init__(self, settings):
+        self.log = logging.getLogger(self.__class__.__name__)
+        self._loop = asyncio.get_event_loop()
+
+        self.settings = settings
+
+        self.connections = {}
+        self.tasks = []
+
+        self.loaded_plugins = []
+
+        self.load_plugin('asdf')
+
+    def start(self):
+        for connection in self.connections:
+            t = asyncio.ensure_future(connection.connect())
+            t.add_done_callback(functools.partial(self.on_connect, connection))
+
+        self._loop.run_forever()
+
+    def add_connection(self, connection):
+        self.connections[connection] = {}
+
+    def on_connect(self, connection, task):
+        asyncio.ensure_future(self.process_message(connection))
+
+    async def process_message(self, connection):
+        """
+        Constantly read new messages from the connection in a non-blocking way
+        """
+        while True:
+            message = await connection.read()
+            if not message:
+                continue
+
+            for p in self.loaded_plugins:
+                self.log.debug('Calling {}'.format(p.__class__.__name__))
+                await p.recv_msg(connection, message)
+
+            self.log.debug('MSG {}: {}'.format(
+                connection.__class__.__name__, message))
+
+    def load_plugin(self, path):
+        """
+        Loads plugins
+        """
+        from importlib import import_module
+
+        mod_path, cls_name = 'warmachine.addons.giphy.GiphySearch'.rsplit('.', 1)
+
+        mod = import_module(mod_path)
+
+        if hasattr(mod, cls_name):
+            cls = getattr(mod, cls_name)()
+
+        self.loaded_plugins.append(cls)
+
+    def reload_plugin(self, path):
+        """
+        Reload a plugin
+        """
+
+    def unload_plugin(self, path):
+        """
+        Unload a plugin
+        """
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--config', help='define warmachine config file',
+                        type=str)
+    args = parser.parse_args()
+
+    if args.config:
+        settings = Config(args.config)
+    else:
+        sys.exit(1)
+
+    bot = Bot(settings)
+
+    for s in settings.sections():
+        options = settings.options_as_dict(s)
+        if options.get('enable', False) == 'true':
+            if s.startswith('slack'):
+                bot.add_connection(SlackWS(options))
+            # elif s.startswith('irc'):
+            #     bot.add_connection(AioIRC(options))
+
+    bot.start()
