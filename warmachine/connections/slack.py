@@ -3,6 +3,7 @@ import json
 import logging
 from pprint import pformat
 from urllib.parse import urlencode
+import urllib.request
 
 import websockets
 
@@ -95,7 +96,6 @@ class SlackWS(Connection):
         Returns:
             str: websocket url to connect to
         """
-        import urllib.request
         url = 'https://slack.com/api/rtm.start?{}'.format(
             urlencode(
                 {'token':
@@ -121,6 +121,8 @@ class SlackWS(Connection):
         """
         if not self._info:
             return
+        with open('slack_info.json', 'w') as f:
+            f.write(pformat(self._info))
 
         self.status = CONNECTED
 
@@ -189,6 +191,18 @@ class SlackWS(Connection):
             msg['presence']
         ))
         self.user_map[msg['user']]['presence'] = msg['presence']
+
+    def get_users_by_channel(self, channel):
+        url = 'https://slack.com/api/groups.info?{}'.format(urlencode(
+            {
+                'token': self.token,
+                'channel': channel,
+            }))
+        self.log.debug(url)
+        req = urllib.request.Request(url)
+        r = urllib.request.urlopen(req).read().decode('utf-8')
+
+        self.log.debug(r)
 
     async def on_group_join(self, channel):
         """
@@ -279,3 +293,31 @@ class SlackWS(Connection):
         #         'user': 'U1U05AF5J'
         #     }
         # }
+
+
+# Invited to a public channel
+#     2016-07-29 16:23:24,817 [DEBUG] SlackWS: on_channel_joined does not exist for message: {'type': 'channel_joined', 'chan
+# nel': {'members': ['U0286NL58', 'U1U05AF5J'], 'purpose': {'last_set': 0, 'creator': '', 'value': ''}, 'topic': {'last_s
+# et': 0, 'creator': '', 'value': ''}, 'is_member': True, 'is_channel': True, 'creator': 'U0286NL58', 'is_archived': Fals
+# e, 'unread_count_display': 0, 'id': 'C1WJU3ZU0', 'name': 'wm-test2', 'is_general': False, 'created': 1469830985, 'unrea
+# d_count': 0, 'latest': {'text': '<@U0286NL58|jason> has joined the channel', 'type': 'message', 'user': 'U0286NL58', 's
+# ubtype': 'channel_join', 'ts': '1469830985.000002'}, 'last_read': '1469830985.000002'}}
+# 2016-07-29 16:23:24,878 [DEBUG] SlackWS: on_message_channel_join does not exist for message: {'channel': 'C1WJU3ZU0', '
+# text': '<@U1U05AF5J|wm-standup-test> has joined the channel', 'type': 'message', 'inviter': 'U0286NL58', 'subtype': 'ch
+# annel_join', 'user_profile': {'real_name': '', 'name': 'wm-standup-test', 'image_72': 'https://avatars.slack-edge.com/2
+# 016-07-21/62015427159_1da65a3cf7a85e85c3cb_72.png', 'first_name': None, 'avatar_hash': '1da65a3cf7a8'}, 'ts': '14698310
+# 04.000003', 'user': 'U1U05AF5J', 'team': 'T027XPE12'}
+
+# Someone else joins a public channel
+# 2016-07-29 16:26:19,966 [DEBUG] SlackWS: on_message_channel_join does not exist for message: {'type': 'message', 'invit
+# er': 'U0286NL58', 'ts': '1469831179.000004', 'team': 'T027XPE12', 'user': 'U0286167T', 'channel': 'C1WJU3ZU0', 'user_pr
+# ofile': {'name': 'synic', 'image_72': 'https://avatars.slack-edge.com/2016-06-24/54136624065_49ec8bc368966c152817_72.jp
+# g', 'real_name': 'Adam Olsen', 'first_name': 'Adam', 'avatar_hash': '49ec8bc36896'}, 'subtype': 'channel_join', 'text':
+#  '<@U0286167T|synic> has joined the channel'}
+
+# Invited to a private channel
+# 2016-07-29 16:27:29,376 [DEBUG] SlackWS: on_message_group_join does not exist for message: {'type': 'message', 'inviter
+# ': 'U0286NL58', 'ts': '1469831249.000047', 'team': 'T027XPE12', 'user': 'U0286167T', 'channel': 'G1W837CGP', 'user_prof
+# ile': {'name': 'synic', 'image_72': 'https://avatars.slack-edge.com/2016-06-24/54136624065_49ec8bc368966c152817_72.jpg'
+# , 'real_name': 'Adam Olsen', 'first_name': 'Adam', 'avatar_hash': '49ec8bc36896'}, 'subtype': 'group_join', 'text': '<@
+# U0286167T|synic> has joined the group'}

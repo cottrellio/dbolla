@@ -26,6 +26,13 @@ class Connection(object):
         raise NotImplementedError('{} must implement `read` method'.format(
             self.__class__.__name__))
 
+    def get_users_by_channel(self, channel):
+        """
+        Return a list of users who are in the provided channel
+        """
+        raise NotImplementedError('{} must implement `get_users_by_channel` '
+                                  'method'.format(self.__class__.__name__))
+
     def id(self):
         """
         Unique ID for this connection. Since there can be more than one
