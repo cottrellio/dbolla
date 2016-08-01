@@ -166,12 +166,17 @@ class SlackWS(Connection):
         https://api.slack.com/events/user_change
         """
         user_info = msg['user']
-        old_nick = self.user_map[user_info['id']]['nick']
+        try:
+            old_nick = self.user_map[user_info['id']]['nick']
+        except KeyError as e:
+            old_nick = None
+            self.log.exception('KeyError: {}'.format(e))
+            self.log.exception('{}'.format(msg))
 
         self.user_map[user_info['id']] = user_info
 
         # Update the nick mapping if the user changed their nickname
-        if old_nick != user_info['nick']:
+        if old_nick and old_nick != user_info['nick']:
             del self.user_nick_to_id[old_nick]
             self.user_nick_to_id[user_info['nick']] = user_info['id']
 
