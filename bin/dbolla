@@ -123,6 +123,7 @@ if __name__ == "__main__":
     if args.config:
         settings = Config(args.config)
     else:
+        sys.stderr.write('Please specify a config file\n')
         sys.exit(1)
 
     bot = Bot(settings)

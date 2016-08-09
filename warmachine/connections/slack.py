@@ -30,6 +30,8 @@ class SlackWS(Connection):
         self.user_map = {}     # user info keyed by their slack id
         self.user_nick_to_id = {}  # slack user id mapped to the (nick)name
 
+        self.my_id = '000'
+
         self.ws = None
 
         self.status = INITALIZED
@@ -42,7 +44,7 @@ class SlackWS(Connection):
     async def read(self):
         if self.ws:
             message = json.loads(await self.ws.recv())
-
+            self.log.debug('REPLY: {}'.format(message))
             # Slack is acknowledging a message was sent. Do nothing
             if 'type' not in message and 'reply_to' in message:
                 # {'ok': True,
@@ -76,11 +78,30 @@ class SlackWS(Connection):
         """
         Say something in the provided channel or IM by id
         """
+
+        # If the destination is a user, figure out the DM channel id
+        if destination_id.startswith('U'):
+            url = 'https://slack.com/api/im.open?{}'.format(urlencode({
+                'token': self.token,
+                'user': destination_id,
+            }))
+
+            req = urllib.request.Request(url)
+            r = urllib.request.urlopen(req).read().decode('utf-8')
+
+            data = json.loads(r)
+
+            if not data['ok']:
+                raise Exception(data)
+                return
+
+            destination_id = data['channel']['id']
+
         await self._send(json.dumps({
             'id': 1,  # TODO: this should be a get_msgid call or something
             'type': 'message',
             'channel': destination_id,
-            'text': message
+            'text': str(message)
         }))
 
     async def _send(self, message):
@@ -125,6 +146,12 @@ class SlackWS(Connection):
             f.write(pformat(self._info))
 
         self.status = CONNECTED
+
+        # Save the bot's id
+        try:
+            self.my_id = self._info['self'].get('id', '000')
+        except KeyError:
+            self.log.error('Unable to read self section of connect info')
 
         # Map users
         for u in self._info.get('users', []):
@@ -205,9 +232,13 @@ class SlackWS(Connection):
             }))
         self.log.debug(url)
         req = urllib.request.Request(url)
-        r = urllib.request.urlopen(req).read().decode('utf-8')
+        r = json.loads(urllib.request.urlopen(req).read().decode('utf-8'))
 
-        self.log.debug(r)
+        if channel.startswith('G'):
+            key = 'group'
+
+        self.log.debug(pformat(r['group']['members']))
+        return r['group']['members']
 
     async def on_group_join(self, channel):
         """

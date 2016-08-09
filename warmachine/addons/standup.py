@@ -30,18 +30,24 @@ class StandUpPlugin(WarMachinePlugin):
         self._loop = asyncio.get_event_loop()
 
         if cmd == '!standup-add':
-            pretty_next_standup, next_standup_secs = \
-                self.get_next_standup_secs(parts[0])
+            next_standup = self.get_next_standup_secs(parts[0])
 
+            pretty_next_standup = next_standup - datetime.now()
+            next_standup_secs = pretty_next_standup.seconds
+
+            ### DEBUG
+            next_standup_secs = 5
+            ###
             f = self._loop.call_later(
                 next_standup_secs, functools.partial(
                     self.standup_schedule_func, connection, message['channel']))
 
             self.standup_schedules[message['channel']] = {
                 'future': f,
+                'datetime': next_standup,
             }
-            await connection.say('Next standup in {}'.format(
-                pretty_next_standup), message['channel'])
+            await connection.say('Next standup in {} ({})'.format(
+                pretty_next_standup, next_standup), message['channel'])
             await connection.say(str(self.standup_schedules),
                                  message['channel'])
 
@@ -50,12 +56,27 @@ class StandUpPlugin(WarMachinePlugin):
 
     async def start_standup(self, connection, channel):
         await connection.say('@channel Time for standup', channel)
-        connection.get_users_by_channel(channel)
+        users = connection.get_users_by_channel(channel)
+
+        for u in users:
+            if u == connection.my_id:
+                continue
+
+            self.log.debug('Messaging user: {} ({})'.format(
+                connection.user_map[u], u))
+
+            await connection.say('What did you do yesterday? What will you '
+                                  'do today? do you have any blockers? '
+                                 '(standup for:{})'.format(channel), u)
 
     @classmethod
     def get_next_standup_secs(cls, time24h):
         """
         calculate the number of seconds until the next standup time
+
+        Returns:
+            datetime: Datetime object representing the next datetime the standup
+            will begin
         """
         now = datetime.now()
 
@@ -74,5 +95,6 @@ class StandUpPlugin(WarMachinePlugin):
         future = now + timedelta(hours=hours)
         next_standup = datetime(future.year, future.month, future.day,
                                 standup_hour, standup_minute)
+        return next_standup
         standup_in = next_standup-now
         return standup_in, standup_in.seconds
