@@ -78,24 +78,9 @@ class SlackWS(Connection):
         """
         Say something in the provided channel or IM by id
         """
-
         # If the destination is a user, figure out the DM channel id
         if destination_id.startswith('U'):
-            url = 'https://slack.com/api/im.open?{}'.format(urlencode({
-                'token': self.token,
-                'user': destination_id,
-            }))
-
-            req = urllib.request.Request(url)
-            r = urllib.request.urlopen(req).read().decode('utf-8')
-
-            data = json.loads(r)
-
-            if not data['ok']:
-                raise Exception(data)
-                return
-
-            destination_id = data['channel']['id']
+            destination_id = self.get_dm_id_by_user(destination_id)
 
         await self._send(json.dumps({
             'id': 1,  # TODO: this should be a get_msgid call or something
@@ -223,6 +208,33 @@ class SlackWS(Connection):
             msg['presence']
         ))
         self.user_map[msg['user']]['presence'] = msg['presence']
+
+    def get_dm_id_by_user(self, user_id):
+        """
+        Return the channel id for a direct message to a specific user.
+
+        Args:
+            user_id (str): slack user id
+
+        Return:
+            str: DM channel id for the provided user.  None on error
+        """
+        url = 'https://slack.com/api/im.open?{}'.format(urlencode({
+            'token': self.token,
+            'user': user_id,
+        }))
+
+        req = urllib.request.Request(url)
+        r = urllib.request.urlopen(req).read().decode('utf-8')
+
+        data = json.loads(r)
+
+        if not data['ok']:
+            raise Exception(data)
+            return
+
+        return data['channel']['id']
+
 
     def get_users_by_channel(self, channel):
         url = 'https://slack.com/api/groups.info?{}'.format(urlencode(
