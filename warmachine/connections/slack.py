@@ -44,7 +44,7 @@ class SlackWS(Connection):
     async def read(self):
         if self.ws:
             message = json.loads(await self.ws.recv())
-            self.log.debug('REPLY: {}'.format(message))
+            self.log.debug('new message parsed: {}'.format(message))
             # Slack is acknowledging a message was sent. Do nothing
             if 'type' not in message and 'reply_to' in message:
                 # {'ok': True,
@@ -82,12 +82,14 @@ class SlackWS(Connection):
         if destination_id.startswith('U'):
             destination_id = self.get_dm_id_by_user(destination_id)
 
-        await self._send(json.dumps({
+        message = {
             'id': 1,  # TODO: this should be a get_msgid call or something
             'type': 'message',
             'channel': destination_id,
             'text': str(message)
-        }))
+        }
+        self.log.debug("Saying {}".format(message))
+        await self._send(json.dumps(message))
 
     async def _send(self, message):
         """
@@ -202,9 +204,12 @@ class SlackWS(Connection):
         # self.log.debug('updated_reconnect_url: {}'.format(self.reconnect_url))
 
     def on_presence_change(self, msg):
+        """
+        updates user's presence in ``self.user_map``
+        """
         self.log.debug('updated_presence: {} ({}) was: {} is_now: {}'.format(
             msg['user'], self.user_map[msg['user']]['name'],
-            self.user_map[msg['user']]['presence'],
+            self.user_map[msg['user']].get('presence', '<undefined>'),
             msg['presence']
         ))
         self.user_map[msg['user']]['presence'] = msg['presence']
@@ -246,10 +251,12 @@ class SlackWS(Connection):
         req = urllib.request.Request(url)
         r = json.loads(urllib.request.urlopen(req).read().decode('utf-8'))
 
+        self.log.debug(r)
         if channel.startswith('G'):
             key = 'group'
-
-        self.log.debug(pformat(r['group']['members']))
+        elif channel.startswith('C'):
+            key = 'channel'
+        self.log.debug(pformat(r[key]['members']))
         return r['group']['members']
 
     async def on_group_join(self, channel):
