@@ -242,22 +242,28 @@ class SlackWS(Connection):
 
 
     def get_users_by_channel(self, channel):
-        url = 'https://slack.com/api/groups.info?{}'.format(urlencode(
+        if channel.startswith('G'):
+            key = 'group'
+        elif channel.startswith('C'):
+            key = 'channel'
+        else:
+            return
+
+        url = 'https://slack.com/api/{}s.info?{}'.format(
+            key, urlencode(
             {
                 'token': self.token,
                 'channel': channel,
             }))
+
         self.log.debug(url)
         req = urllib.request.Request(url)
         r = json.loads(urllib.request.urlopen(req).read().decode('utf-8'))
 
         self.log.debug(r)
-        if channel.startswith('G'):
-            key = 'group'
-        elif channel.startswith('C'):
-            key = 'channel'
+
         self.log.debug(pformat(r[key]['members']))
-        return r['group']['members']
+        return r[key]['members']
 
     async def on_group_join(self, channel):
         """
