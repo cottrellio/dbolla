@@ -44,7 +44,6 @@ class SlackWS(Connection):
     async def read(self):
         if self.ws:
             message = json.loads(await self.ws.recv())
-            self.log.debug('new message parsed: {}'.format(message))
             # Slack is acknowledging a message was sent. Do nothing
             if 'type' not in message and 'reply_to' in message:
                 # {'ok': True,
@@ -53,8 +52,9 @@ class SlackWS(Connection):
                 #  'ts': '1469743355.000150'}
                 return
 
+            self.log.debug('new message parsed: {}'.format(message))
             # Handle actual messages
-            elif message['type'] == 'message' and 'subtype' not in message:
+            if message['type'] == 'message' and 'subtype' not in message:
                 return await self.process_message(message)
             else:
                 if 'subtype' in message:
@@ -163,6 +163,8 @@ class SlackWS(Connection):
                 await self.say(pformat(self.user_map[self.user_nick_to_id[n]]),
                                msg['channel'])
             return
+        elif msg['text'].startswith('!looptime'):
+            await self.say(self._loop.time(), msg['channel'])
 
         retval = {
             'sender': msg['user'],

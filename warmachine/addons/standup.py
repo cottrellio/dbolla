@@ -64,11 +64,14 @@ class StandUpPlugin(WarMachinePlugin):
 
         self._loop = asyncio.get_event_loop()
 
+        ################
+        # !standup-add #
+        ################
         if cmd == '!standup-add':
             next_standup = self.get_next_standup_secs(parts[0])
 
-            pretty_next_standup = next_standup - datetime.now()
-            next_standup_secs = pretty_next_standup.seconds
+            standup_td = next_standup - datetime.now()
+            next_standup_secs = standup_td.seconds
 
             ### DEBUG
             # next_standup_secs = 5
@@ -80,11 +83,34 @@ class StandUpPlugin(WarMachinePlugin):
             self.standup_schedules[message['channel']] = {
                 'future': f,
                 'datetime': next_standup,
+                'time24h': parts[0],
             }
-            await connection.say('Next standup in {} ({})'.format(
-                pretty_next_standup, next_standup), message['channel'])
+            await connection.say('Next standup at {} ({}s)'.format(
+                next_standup.ctime(), next_standup_secs), message['channel'])
+
             await connection.say(str(self.standup_schedules),
                                  message['channel'])
+        ######################
+        # !standup-schedules #
+        ######################
+        elif cmd == '!standup-schedules':
+            await connection.say('Standup Schedules', message['channel'])
+            await connection.say('-----------------', message['channel'])
+            await connection.say(
+                'Current Loop Time: {}'.format(self._loop.time()),
+                message['channel'])
+            await connection.say(
+                'Current Time: {}'.format(datetime.now()), message['channel'])
+            await connection.say(
+                pformat(self.standup_schedules), message['channel'])
+        ############################
+        # !standup-waiting_replies #
+        ############################
+        elif cmd == '!standup-waiting_replies':
+            await connection.say('Waiting for Replies From', message['channel'])
+            await connection.say('------------------------', message['channel'])
+            await connection.say(
+                pformat(self.users_awaiting_reply), message['channel'])
 
     def standup_schedule_func(self, connection, channel):
             asyncio.ensure_future(self.start_standup(connection, channel))
@@ -145,27 +171,36 @@ class StandUpPlugin(WarMachinePlugin):
         """
         calculate the number of seconds until the next standup time
 
+        Args:
+            time24h (str): The 24 hour version of the time that the standup
+            should run on Mon-Fri
+
         Returns:
             datetime: Datetime object representing the next datetime the standup
             will begin
         """
         now = datetime.now()
 
-        # if it's friday, wait 72 hours
-        if now.isoweekday() == 5:
-            hours = 72
-        # if it's saturday, wait 48
-        elif now.isoweekday() == 6:
-            hours = 48
-        # if it's sunday-thur wait 24
-        else:
-            hours = 24
-
         standup_hour, standup_minute = (int(s) for s in time24h.split(':'))
 
-        future = now + timedelta(hours=hours)
-        next_standup = datetime(future.year, future.month, future.day,
+        next_standup = datetime(now.year, now.month, now.day,
                                 standup_hour, standup_minute)
+
+        # If we've already past the time for today, schedule it for that time on the
+        # next weekday
+        if now > next_standup:
+            # if it's friday, wait 72 hours
+            if now.isoweekday() == 5:
+                hours = 72
+            # if it's saturday, wait 48
+            elif now.isoweekday() == 6:
+                hours = 48
+            # if it's sunday-thur wait 24
+            else:
+                hours = 24
+
+            future = now + timedelta(hours=hours)
+            next_standup = datetime(future.year, future.month, future.day,
+                                    standup_hour, standup_minute)
+
         return next_standup
-        standup_in = next_standup-now
-        return standup_in, standup_in.seconds
