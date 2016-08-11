@@ -21,3 +21,42 @@ Simply run the command:
 #+END_SRC
 
 * Writing a Plugin
+* Writing a Connection
+To write a new connection protocol you must inherit from
+~warmachine.connections.base.Connection~. This class defines an interface you
+must implement to support the plugins plugins.
+** ~__config_prefix__~
+This global is used to decide which connection to use when it is found in the
+config file. E.g. IRC uses ~'irc'~ and Slack uses ~'slack'~. It should be
+defined somewhere near the top of your file.
+** ~connect()~
+D'bolla uses python 3's asyncio to manage multiple connections concurrently thus
+you should use ~asyncio.open_connection~ to create your connection. Once you
+have successfully connected you must set ~self.status~ to
+~warmachine.connections.base.CONNECTED~. This indicates the connection is ready
+to use.
+** ~read()~
+This method is constantly checked in a loop by the ~Bot~ class. When a message
+is returned it is passed into the ~recv_msg~ method in all loaded plugins. This
+return value should be formatted in the following format:
+
+#+BEGIN_SRC python
+{
+    'sender': 'sender nickname',
+    'channel': '#channel_name or None for private messages',
+    'message': 'The message that was received',
+}
+#+END_SRC
+** ~id~
+This should return a unique id used to identify this particular connection. As
+an example, the IRC connection uses something like this:
+
+#+BEGIN_SRC python
+@property
+@warmachine.utils.decorators.memoize
+def id(self):
+    from hashlib import md5
+
+    value = '{}-{}'.format(self.host, self.nick)
+    return md5(value.encode()).hexdigest()
+#+END_SRC
