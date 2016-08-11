@@ -9,7 +9,7 @@ from warmachine.config import Config
 from warmachine.connections.irc import AioIRC
 from warmachine.connections.slack import SlackWS
 
-logging.config.dictConfig({
+log_config = {
     'version': 1,
     'disable_existing_loggers': False,
 
@@ -35,7 +35,7 @@ logging.config.dictConfig({
             'handlers': ['console', ]
         }
     }
-})
+}
 
 
 class Bot(object):
@@ -118,6 +118,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', help='define warmachine config file',
                         type=str)
+    parser.add_argument('--debug', help='enable extra logging output',
+                        action='store_true', default=False)
     args = parser.parse_args()
 
     if args.config:
@@ -125,6 +127,11 @@ if __name__ == "__main__":
     else:
         sys.stderr.write('Please specify a config file\n')
         sys.exit(1)
+
+    if args.debug:
+        log_config['loggers']['']['level'] = 'DEBUG'
+
+    logging.config.dictConfig(log_config)
 
     bot = Bot(settings)
 
