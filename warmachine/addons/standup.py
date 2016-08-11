@@ -272,7 +272,10 @@ class StandUpPlugin(WarMachinePlugin):
         Load the channel schedules from a file.
         """
         with open('/home/jason/.warmachine/standup_schedules.json', 'r') as f:
-            data = json.loads(f.read())
+            try:
+                data = json.loads(f.read())
+            except:
+                return
 
         for channel in data[connection.id]:
             self.schedule_standup(
