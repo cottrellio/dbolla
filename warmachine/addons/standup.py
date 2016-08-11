@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta
 import functools
+import json
 from pprint import pformat
 
 from .base import WarMachinePlugin
@@ -11,8 +12,12 @@ class StandUpPlugin(WarMachinePlugin):
     WarMachine stand up plugin.
 
     Commands:
-        !standup-add <24 hr time to kick off> <SunMTWThFSat> [channel]
-        !standup-remove [channel]
+        In a channel:
+            !standup-add <24 hr time to kick off>
+            !standup-remove
+        Direct Message:
+            !standup-schedules
+            !standup-waiting_replies
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -26,6 +31,14 @@ class StandUpPlugin(WarMachinePlugin):
         self.users_awaiting_reply = {}
 
     async def recv_msg(self, connection, message):
+        """
+        When the connection receives a message this method is called. We parse
+        the message for commands we want to listen for.
+
+        Args:
+            connection (Connection): the warmachine connection object
+            message (dict): the warmachine formatted message
+        """
         if not message['message'].startswith('!standup'):
             if message['channel'] in self.users_awaiting_reply:
                 self.log.debug("Probable reply recvd from {}: {}".format(
@@ -57,8 +70,6 @@ class StandUpPlugin(WarMachinePlugin):
                 del self.users_awaiting_reply[message['channel']]
             return
 
-        self.log.debug('standup recv: {}'.format(message))
-
         cmd = message['message'].split(' ')[0]
         parts = message['message'].split(' ')[1:]
 
@@ -73,9 +84,6 @@ class StandUpPlugin(WarMachinePlugin):
             standup_td = next_standup - datetime.now()
             next_standup_secs = standup_td.seconds
 
-            ### DEBUG
-            # next_standup_secs = 5
-            ###
             f = self._loop.call_later(
                 next_standup_secs, functools.partial(
                     self.standup_schedule_func, connection, message['channel']))
@@ -85,15 +93,26 @@ class StandUpPlugin(WarMachinePlugin):
                 'datetime': next_standup,
                 'time24h': parts[0],
             }
+
+            self.log.info('New schedule added to channel {} for {}'.format(
+                connection.channel_map[message['channel']]['name'],
+                parts[0]
+            ))
+
             await connection.say('Next standup at {} ({}s)'.format(
                 next_standup.ctime(), next_standup_secs), message['channel'])
 
-            await connection.say(str(self.standup_schedules),
-                                 message['channel'])
+            # d = json.dumps(self.standup_schedules)
+            # with open('~/.warmachine/standup_schedules.json', 'w') as f:
+            #     f.write(d)
+
+
         ######################
         # !standup-schedules #
         ######################
-        elif cmd == '!standup-schedules':
+        elif message['channel'].startswith('D') and cmd == '!standup-schedules':
+            self.log.info('Reporting standup schedules to DM {}'.format(
+                message['channel']))
             await connection.say('Standup Schedules', message['channel'])
             await connection.say('-----------------', message['channel'])
             await connection.say(
@@ -106,20 +125,45 @@ class StandUpPlugin(WarMachinePlugin):
         ############################
         # !standup-waiting_replies #
         ############################
-        elif cmd == '!standup-waiting_replies':
+        elif messages['channel'].startswith('D') and \
+             cmd == '!standup-waiting_replies':
+            self.log.info('Reporting who we are waiting on replies for to DM '
+                          ' {}'.format(message['channel']))
             await connection.say('Waiting for Replies From', message['channel'])
             await connection.say('------------------------', message['channel'])
             await connection.say(
                 pformat(self.users_awaiting_reply), message['channel'])
 
     def standup_schedule_func(self, connection, channel):
-            asyncio.ensure_future(self.start_standup(connection, channel))
+        """
+        Non-async function used to schedule the standup for a channel.
+
+        See :meth:`start_standup`
+        """
+        self.log.info('Executing standup for channel {}'.format(
+            connection.channel_map[channel]['name']
+        ))
+        asyncio.ensure_future(self.start_standup(connection, channel))
 
     def pester_schedule_func(self, connection, user_id, channel, pester):
+        """
+        Non-async function used to schedule pesters for a user.
+
+        See :meth:`standup_priv_msg`
+        """
+        self.log.info('Pestering user {} to give a standup for channel '
+                      '{} (interval: {}s)'.format(
+                          connection.user_map[user_id],
+                          connection.channel_map[channel]['name'],
+                          pester))
         asyncio.ensure_future(self.standup_priv_msg(
             connection, user_id, channel, pester))
 
     async def start_standup(self, connection, channel):
+        """
+        Notify the channel that the standup is about to begin, then loop through
+        all the users in the channel asking them report their standup.
+        """
         await connection.say('@channel Time for standup', channel)
         users = connection.get_users_by_channel(channel)
 

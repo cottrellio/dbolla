@@ -153,6 +153,9 @@ class SlackWS(Connection):
         for c in self._info.get('channels', []):
             self.channel_map[c['id']] = c
 
+        for g in self._info.get('groups', []):
+            self.channel_map[g['id']] = g
+
     async def process_message(self, msg):
         # Built-in !whois action
         if 'text' not in msg:
@@ -356,7 +359,6 @@ class SlackWS(Connection):
         #         'user': 'U1U05AF5J'
         #     }
         # }
-
 
 # Invited to a public channel
 #     2016-07-29 16:23:24,817 [DEBUG] SlackWS: on_channel_joined does not exist for message: {'type': 'channel_joined', 'chan
