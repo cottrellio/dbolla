@@ -30,6 +30,9 @@ class StandUpPlugin(WarMachinePlugin):
         # }
         self.users_awaiting_reply = {}
 
+    def on_connect(self, connection):
+        self.load_schedule(connection)
+
     async def recv_msg(self, connection, message):
         """
         When the connection receives a message this method is called. We parse
@@ -73,39 +76,12 @@ class StandUpPlugin(WarMachinePlugin):
         cmd = message['message'].split(' ')[0]
         parts = message['message'].split(' ')[1:]
 
-        self._loop = asyncio.get_event_loop()
-
         ################
         # !standup-add #
         ################
         if cmd == '!standup-add':
-            next_standup = self.get_next_standup_secs(parts[0])
-
-            standup_td = next_standup - datetime.now()
-            next_standup_secs = standup_td.seconds
-
-            f = self._loop.call_later(
-                next_standup_secs, functools.partial(
-                    self.standup_schedule_func, connection, message['channel']))
-
-            self.standup_schedules[message['channel']] = {
-                'future': f,
-                'datetime': next_standup,
-                'time24h': parts[0],
-            }
-
-            self.log.info('New schedule added to channel {} for {}'.format(
-                connection.channel_map[message['channel']]['name'],
-                parts[0]
-            ))
-
-            await connection.say('Next standup at {} ({}s)'.format(
-                next_standup.ctime(), next_standup_secs), message['channel'])
-
-            # d = json.dumps(self.standup_schedules)
-            # with open('~/.warmachine/standup_schedules.json', 'w') as f:
-            #     f.write(d)
-
+            self.schedule_standup(connection, message['channel'], parts[0])
+            self.save_schedule(connection)
 
         ######################
         # !standup-schedules #
@@ -122,6 +98,7 @@ class StandUpPlugin(WarMachinePlugin):
                 'Current Time: {}'.format(datetime.now()), message['channel'])
             await connection.say(
                 pformat(self.standup_schedules), message['channel'])
+
         ############################
         # !standup-waiting_replies #
         ############################
@@ -133,6 +110,30 @@ class StandUpPlugin(WarMachinePlugin):
             await connection.say('------------------------', message['channel'])
             await connection.say(
                 pformat(self.users_awaiting_reply), message['channel'])
+
+    def schedule_standup(self, connection, channel, time24h):
+        """
+        Schedules a standup
+        """
+        next_standup = self.get_next_standup_secs(time24h)
+
+        standup_td = next_standup - datetime.now()
+        next_standup_secs = standup_td.seconds
+
+        f = self._loop.call_later(
+            next_standup_secs, functools.partial(
+                self.standup_schedule_func, connection, channel))
+
+        self.standup_schedules[channel] = {
+            'future': f,
+            'datetime': next_standup,
+            'time24h': time24h,
+        }
+
+        self.log.info('New schedule added to channel {} for {}'.format(
+            connection.channel_map[channel]['name'],
+            time24h
+        ))
 
     def standup_schedule_func(self, connection, channel):
         """
@@ -249,12 +250,30 @@ class StandUpPlugin(WarMachinePlugin):
 
         return next_standup
 
-    def save_schedule(self):
+    def save_schedule(self, connection):
         """
         Save all channel schedules to a file.
         """
+        keys_to_save = ['time24h', ]
+        data = {}
+        for channel in self.standup_schedules:
+            data[channel] = {}
+            for key in keys_to_save:
+                data[channel][key] = self.standup_schedules[channel][key]
 
-    def load_schedule(self):
+        data = {connection.id: data}
+        with open('/home/jason/.warmachine/standup_schedules.json', 'w') as f:
+            f.write(json.dumps(data))
+
+        self.log.info('Schedules saved to disk')
+
+    def load_schedule(self, connection):
         """
         Load the channel schedules from a file.
         """
+        with open('/home/jason/.warmachine/standup_schedules.json', 'r') as f:
+            data = json.loads(f.read())
+
+        for channel in data[connection.id]:
+            self.schedule_standup(
+                connection, channel, data[connection.id][channel]['time24h'])

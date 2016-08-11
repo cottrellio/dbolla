@@ -4,6 +4,8 @@ import asyncio
 import datetime
 import functools
 import logging.config
+import os
+
 
 from warmachine.config import Config
 from warmachine.connections.irc import AioIRC
@@ -53,6 +55,8 @@ class Bot(object):
         self.load_plugin('warmachine.addons.giphy.GiphySearch')
         self.load_plugin('warmachine.addons.standup.StandUpPlugin')
 
+        # TODO: Ensure the config directory has been created
+
     def start(self):
         for connection in self.connections:
             t = asyncio.ensure_future(connection.connect())
@@ -64,6 +68,9 @@ class Bot(object):
         self.connections[connection] = {}
 
     def on_connect(self, connection, task):
+        for p in self.loaded_plugins:
+            if hasattr(p, 'on_connect'):
+                p.on_connect(connection)
         asyncio.ensure_future(self.process_message(connection))
 
     async def process_message(self, connection):

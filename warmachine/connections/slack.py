@@ -8,7 +8,7 @@ import urllib.request
 import websockets
 
 from .base import Connection, INITALIZED, CONNECTED
-
+from ..utils.decorators import memoize
 
 #: Define slack as a config section prefix
 __config_prefix__ = 'slack'
@@ -35,6 +35,12 @@ class SlackWS(Connection):
         self.ws = None
 
         self.status = INITALIZED
+
+    @property
+    @memoize
+    def id(self):
+        from hashlib import md5
+        return md5(self.token.encode()).hexdigest()
 
     async def connect(self):
         self.host = self.authenticate()
