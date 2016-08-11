@@ -125,7 +125,7 @@ class StandUpPlugin(WarMachinePlugin):
         ############################
         # !standup-waiting_replies #
         ############################
-        elif messages['channel'].startswith('D') and \
+        elif message['channel'].startswith('D') and \
              cmd == '!standup-waiting_replies':
             self.log.info('Reporting who we are waiting on replies for to DM '
                           ' {}'.format(message['channel']))
@@ -248,3 +248,13 @@ class StandUpPlugin(WarMachinePlugin):
                                     standup_hour, standup_minute)
 
         return next_standup
+
+    def save_schedule(self):
+        """
+        Save all channel schedules to a file.
+        """
+
+    def load_schedule(self):
+        """
+        Load the channel schedules from a file.
+        """
