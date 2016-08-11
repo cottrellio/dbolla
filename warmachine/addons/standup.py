@@ -22,11 +22,17 @@ class StandUpPlugin(WarMachinePlugin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        # 'CHANNEL': {
+        #     'future': Task for running next standup,
+        #     'time24': Original 24h time to schedule,
+        #     'datetime': datetime object of when the next schedule will run,
+        #     'ignoring': list of users to ignore when priv messaging,
+        # }
         self.standup_schedules = {}
 
         # 'DM_CHANNEL': {
-        #    'user': 'UID',
-        #    'for_channel': 'CHID',
+        #     'user': 'UID',
+        #     'for_channel': 'CHID',
         # }
         self.users_awaiting_reply = {}
 
@@ -75,45 +81,98 @@ class StandUpPlugin(WarMachinePlugin):
 
         cmd = message['message'].split(' ')[0]
         parts = message['message'].split(' ')[1:]
+        channel = message['channel']
 
-        ################
-        # !standup-add #
-        ################
-        if cmd == '!standup-add':
-            self.schedule_standup(connection, message['channel'], parts[0])
+        # ======================================================================
+        # !standup-add <24h time>
+        #
+        # Add (or update if one exists) a schedule for standup at the given 24h
+        # time M-F
+        # ======================================================================
+        if cmd == '!standup-add' and not channel.startswith('D'):
+            # If there is already a schedule, kill the task for the old one.
+            if channel in self.standup_schedules:
+                self.standup_schedules[channel]['future'].cancel()
+                self.log.info('Unscheduling existing schedule for {} at '
+                              '{}'.format(
+                                  channel,
+                                  self.standup_schedules[channel]['time24h']))
+
+            self.schedule_standup(connection, channel, parts[0])
             self.save_schedule(connection)
+        # ======================================================================
+        # !standup-remove
+        #
+        # Remove an existing schedule from the channel
+        # ======================================================================
+        elif cmd == '!standup-remove' and not channel.startswith('D'):
+            if channel in self.standup_schedules:
+                self.standup_schedules[channel]['future'].cancel()
+                del self.standup_schedules[channel]
+                self.save_schedule(connection)
+                self.log.info('Removed standup for channel {}'.format(channel))
 
-        ######################
-        # !standup-schedules #
-        ######################
-        elif message['channel'].startswith('D') and cmd == '!standup-schedules':
+        # ======================================================================
+        # !standup-ignore
+        # !standup-ignore <comma seperated list of users to ignore>
+        #
+        # Ignore users provided when private messaging asking the standup
+        # questions.
+        # If no users are provided, display the users currently being ignored
+        # ======================================================================
+        elif cmd == '!standup-ignore' and not channel.startswith('D') \
+             and channel in self.standup_schedules:
+            if parts:
+                users = ''.join(parts).split(',')
+                for u in users:
+                    if u not in self.standup_schedules[channel]['ignoring']:
+                        self.log.info('Ignoring {} in channel {}'.format(
+                            u, channel))
+                        self.standup_schedules[channel]['ignoring'].append(u)
+                self.save_schedule(connection)
+
+            ignoring = ', '.join(
+                self.standup_schedules[channel]['ignoring'])
+            if not ignoring:
+                ignoring = 'no one'
+
+            await connection.say('Currently ignoring {}'.format(ignoring),
+                                 channel)
+
+        # ======================================================================
+        # !standup-schedules
+        #
+        # Report the current standup schedule dict to the requesting user
+        # ======================================================================
+        elif channel.startswith('D') and cmd == '!standup-schedules':
             self.log.info('Reporting standup schedules to DM {}'.format(
-                message['channel']))
-            await connection.say('Standup Schedules', message['channel'])
-            await connection.say('-----------------', message['channel'])
+                channel))
+            await connection.say('Standup Schedules', channel)
+            await connection.say('-----------------', channel)
             await connection.say(
-                'Current Loop Time: {}'.format(self._loop.time()),
-                message['channel'])
+                'Current Loop Time: {}'.format(self._loop.time()), channel)
             await connection.say(
-                'Current Time: {}'.format(datetime.now()), message['channel'])
-            await connection.say(
-                pformat(self.standup_schedules), message['channel'])
+                'Current Time: {}'.format(datetime.now()), channel)
+            await connection.say(pformat(self.standup_schedules), channel)
 
-        ############################
-        # !standup-waiting_replies #
-        ############################
-        elif message['channel'].startswith('D') and \
+        # ======================================================================
+        # !standup-waiting_replies
+        #
+        # Report the data struct of users we are waiting on a reply from  to the
+        # requesting user.
+        # ======================================================================
+        elif channel.startswith('D') and \
              cmd == '!standup-waiting_replies':
             self.log.info('Reporting who we are waiting on replies for to DM '
-                          ' {}'.format(message['channel']))
-            await connection.say('Waiting for Replies From', message['channel'])
-            await connection.say('------------------------', message['channel'])
+                          ' {}'.format(channel))
+            await connection.say('Waiting for Replies From', channel)
+            await connection.say('------------------------', channel)
             await connection.say(
-                pformat(self.users_awaiting_reply), message['channel'])
+                pformat(self.users_awaiting_reply), channel)
 
     def schedule_standup(self, connection, channel, time24h):
         """
-        Schedules a standup
+        Schedules a standup by creating a Task to be run in the future.
         """
         next_standup = self.get_next_standup_secs(time24h)
 
@@ -128,6 +187,7 @@ class StandUpPlugin(WarMachinePlugin):
             'future': f,
             'datetime': next_standup,
             'time24h': time24h,
+            'ignoring': [],
         }
 
         self.log.info('New schedule added to channel {} for {}'.format(
@@ -154,7 +214,7 @@ class StandUpPlugin(WarMachinePlugin):
         """
         self.log.info('Pestering user {} to give a standup for channel '
                       '{} (interval: {}s)'.format(
-                          connection.user_map[user_id],
+                          connection.user_map[user_id]['name'],
                           connection.channel_map[channel]['name'],
                           pester))
         asyncio.ensure_future(self.standup_priv_msg(
@@ -169,7 +229,8 @@ class StandUpPlugin(WarMachinePlugin):
         users = connection.get_users_by_channel(channel)
 
         for u in users:
-            if u == connection.my_id:
+            if u == connection.my_id or \
+               u in self.standup_schedules[channel]['ignoring']:
                 continue
 
             await self.standup_priv_msg(connection, u, channel)
@@ -254,7 +315,7 @@ class StandUpPlugin(WarMachinePlugin):
         """
         Save all channel schedules to a file.
         """
-        keys_to_save = ['time24h', ]
+        keys_to_save = ['time24h', 'ignoring']
         data = {}
         for channel in self.standup_schedules:
             data[channel] = {}
@@ -274,9 +335,17 @@ class StandUpPlugin(WarMachinePlugin):
         with open('/home/jason/.warmachine/standup_schedules.json', 'r') as f:
             try:
                 data = json.loads(f.read())
-            except:
+            except Exception as e:
+                self.log.debug('Error loading standup schedules: {}'.format(e))
                 return
 
         for channel in data[connection.id]:
             self.schedule_standup(
                 connection, channel, data[connection.id][channel]['time24h'])
+
+            # Restore the ignore list
+            try:
+                self.standup_schedules[channel]['ignoring'] = \
+                    data[connection.id][channel]['ignoring']
+            except KeyError:
+                pass
