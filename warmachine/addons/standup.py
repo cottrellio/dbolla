@@ -32,9 +32,10 @@ class StandUpPlugin(WarMachinePlugin):
 
         # 'DM_CHANNEL': {
         #     'user': 'UID',
-        #     'for_channel': 'CHID',
+        #     'for_channels': ['CHID',],
         # }
         self.users_awaiting_reply = {}
+        self.log.info('Loaded standup plugin')
 
     def on_connect(self, connection):
         self.load_schedule(connection)
@@ -48,40 +49,52 @@ class StandUpPlugin(WarMachinePlugin):
             connection (Connection): the warmachine connection object
             message (dict): the warmachine formatted message
         """
-        if not message['message'].startswith('!standup'):
-            if message['channel'] in self.users_awaiting_reply:
-                self.log.debug("Probable reply recvd from {}: {}".format(
-                    message['channel'],
-                    message['message']
-                ))
-                data = self.users_awaiting_reply[message['channel']]
-                for_channel = data['for_channel']
+        if not message['message'].startswith('!standup') \
+           and not message['channel'] \
+           and message['sender'] in self.users_awaiting_reply:
+            self.log.debug("Probable standup reply recvd from {}: {}".format(
+                message['sender'], message['message']))
 
-                try:
-                    user_nick = connection.user_map[data['user']]['name']
-                except KeyError:
-                    user_nick = data['user']
+            user_nick = message['sender']
 
-                if 'pester_task' in data:
-                    self.log.debug('Stopping pester for {}'.format(user_nick))
-                    data['pester_task'].cancel()
+            data = self.users_awaiting_reply[user_nick]
 
-                announce_message = '{}: {}'.format(
-                    user_nick,
-                    message['message']
-                )
+            for_channels = data['for_channels']
 
-                await connection.say(
-                    announce_message,
-                    for_channel)
+            if 'pester_task' in data:
+                self.log.debug('Stopping pester for {}'.format(user_nick))
+                data['pester_task'].cancel()
+                data['pester_task'] = None
 
-                del data
-                del self.users_awaiting_reply[message['channel']]
+            announce_message = '{}: {}'.format(
+                user_nick,
+                message['message']
+            )
+
+            self.users_awaiting_reply[user_nick]['standup_msg'] = \
+                message['message']
+
+            f = self._loop.call_later(
+                16*(60*60),  # 16 hours
+                self.clear_old_standup_message_schedule_func, user_nick
+            )
+
+            self.users_awaiting_reply[user_nick]['clear_standup_msg_f'] = f
+
+            for i in range(0, len(for_channels)):
+                c = self.users_awaiting_reply[user_nick]['for_channels'].pop()
+                await connection.say(announce_message, c)
+
+            del data
+            # del self.users_awaiting_reply[user_nick]
             return
+
+        # Otherwise parse for the commands:
 
         cmd = message['message'].split(' ')[0]
         parts = message['message'].split(' ')[1:]
         channel = message['channel']
+        user_nick = message['sender']
 
         # ======================================================================
         # !standup-add <24h time>
@@ -89,7 +102,7 @@ class StandUpPlugin(WarMachinePlugin):
         # Add (or update if one exists) a schedule for standup at the given 24h
         # time M-F
         # ======================================================================
-        if cmd == '!standup-add' and not channel.startswith('D'):
+        if cmd == '!standup-add' and channel:
             # If there is already a schedule, kill the task for the old one.
             if channel in self.standup_schedules:
                 self.standup_schedules[channel]['future'].cancel()
@@ -100,12 +113,13 @@ class StandUpPlugin(WarMachinePlugin):
 
             self.schedule_standup(connection, channel, parts[0])
             self.save_schedule(connection)
+
         # ======================================================================
         # !standup-remove
         #
         # Remove an existing schedule from the channel
         # ======================================================================
-        elif cmd == '!standup-remove' and not channel.startswith('D'):
+        elif cmd == '!standup-remove' and channel:
             if channel in self.standup_schedules:
                 self.standup_schedules[channel]['future'].cancel()
                 del self.standup_schedules[channel]
@@ -120,15 +134,17 @@ class StandUpPlugin(WarMachinePlugin):
         # questions.
         # If no users are provided, display the users currently being ignored
         # ======================================================================
-        elif cmd == '!standup-ignore' and not channel.startswith('D') \
+        elif cmd == '!standup-ignore' and channel \
              and channel in self.standup_schedules:
             if parts:
-                users = ''.join(parts).split(',')
-                for u in users:
+                users_to_ignore = ''.join(parts).split(',')
+                for u in users_to_ignore:
                     if u not in self.standup_schedules[channel]['ignoring']:
                         self.log.info('Ignoring {} in channel {}'.format(
                             u, channel))
                         self.standup_schedules[channel]['ignoring'].append(u)
+
+                # Save the new users to ignore for this channel
                 self.save_schedule(connection)
 
             ignoring = ', '.join(
@@ -138,22 +154,26 @@ class StandUpPlugin(WarMachinePlugin):
 
             await connection.say('Currently ignoring {}'.format(ignoring),
                                  channel)
+        elif cmd == '!standup-unignore' and channel \
+             and channel in self.standup_schedules:
+            if not parts:
+                return
 
         # ======================================================================
         # !standup-schedules
         #
         # Report the current standup schedule dict to the requesting user
         # ======================================================================
-        elif channel.startswith('D') and cmd == '!standup-schedules':
-            self.log.info('Reporting standup schedules to DM {}'.format(
-                channel))
-            await connection.say('Standup Schedules', channel)
-            await connection.say('-----------------', channel)
+        elif not channel and cmd == '!standup-schedules':
+            self.log.info('Reporting standup schedules to {}'.format(
+                user_nick))
+            await connection.say('Standup Schedules', user_nick)
+            await connection.say('-----------------', user_nick)
             await connection.say(
-                'Current Loop Time: {}'.format(self._loop.time()), channel)
+                'Current Loop Time: {}'.format(self._loop.time()), user_nick)
             await connection.say(
-                'Current Time: {}'.format(datetime.now()), channel)
-            await connection.say(pformat(self.standup_schedules), channel)
+                'Current Time: {}'.format(datetime.now()), user_nick)
+            await connection.say(pformat(self.standup_schedules), user_nick)
 
         # ======================================================================
         # !standup-waiting_replies
@@ -161,14 +181,13 @@ class StandUpPlugin(WarMachinePlugin):
         # Report the data struct of users we are waiting on a reply from  to the
         # requesting user.
         # ======================================================================
-        elif channel.startswith('D') and \
-             cmd == '!standup-waiting_replies':
-            self.log.info('Reporting who we are waiting on replies for to DM '
-                          ' {}'.format(channel))
-            await connection.say('Waiting for Replies From', channel)
-            await connection.say('------------------------', channel)
+        elif not channel and cmd == '!standup-waiting_replies':
+            self.log.info('Reporting who we are waiting on replies for to '
+                          ' {}'.format(user_nick))
+            await connection.say('Waiting for Replies From', user_nick)
+            await connection.say('------------------------', user_nick)
             await connection.say(
-                pformat(self.users_awaiting_reply), channel)
+                pformat(self.users_awaiting_reply), user_nick)
 
     def schedule_standup(self, connection, channel, time24h):
         """
@@ -191,9 +210,7 @@ class StandUpPlugin(WarMachinePlugin):
         }
 
         self.log.info('New schedule added to channel {} for {}'.format(
-            connection.channel_map[channel]['name'],
-            time24h
-        ))
+            channel, time24h))
 
     def standup_schedule_func(self, connection, channel):
         """
@@ -201,75 +218,88 @@ class StandUpPlugin(WarMachinePlugin):
 
         See :meth:`start_standup`
         """
-        self.log.info('Executing standup for channel {}'.format(
-            connection.channel_map[channel]['name']
-        ))
+        self.log.info('Executing standup for channel {}'.format(channel))
         asyncio.ensure_future(self.start_standup(connection, channel))
 
-    def pester_schedule_func(self, connection, user_id, channel, pester):
+    def pester_schedule_func(self, connection, user, channel, pester):
         """
         Non-async function used to schedule pesters for a user.
 
         See :meth:`standup_priv_msg`
         """
         self.log.info('Pestering user {} to give a standup for channel '
-                      '{} (interval: {}s)'.format(
-                          connection.user_map[user_id]['name'],
-                          connection.channel_map[channel]['name'],
-                          pester))
+                      '{} (interval: {}s)'.format(user, channel, pester))
         asyncio.ensure_future(self.standup_priv_msg(
-            connection, user_id, channel, pester))
+            connection, user, channel, pester))
+
+    def clear_old_standup_message_schedule_func(self, user):
+        """
+        This function is scheduled to remove old standup messages so that the
+        user is asked about standup the following day.
+        """
+        del self.users_awaiting_reply[user]['clear_standup_msg_f']
+        del self.users_awaiting_reply[user]['standup_msg']
 
     async def start_standup(self, connection, channel):
         """
         Notify the channel that the standup is about to begin, then loop through
         all the users in the channel asking them report their standup.
         """
-        await connection.say('@channel Time for standup', channel)
         users = connection.get_users_by_channel(channel)
+        if not users:
+            self.log.error('Unable to get_users_by_channel for channel '
+                           '{}. Skipping standup.'.format(channel))
+            return
+        await connection.say('@channel Time for standup', channel)
 
         for u in users:
-            if u == connection.my_id or \
+            if u == connection.nick or \
                u in self.standup_schedules[channel]['ignoring']:
                 continue
 
-            await self.standup_priv_msg(connection, u, channel)
+            if u in self.users_awaiting_reply and \
+               'standup_msg' in self.users_awaiting_reply[u]:
+                await connection.say('{}: {}'.format(
+                    u, self.users_awaiting_reply[u]['standup_msg']), channel)
+            else:
+                await self.standup_priv_msg(connection, u, channel)
 
-    async def standup_priv_msg(self, connection, user_id, channel, pester=600):
+    async def standup_priv_msg(self, connection, user, channel, pester=600):
         """
-        Send a private message to ``user_id`` asking for their standup update.
+        Send a private message to ``user`` asking for their standup update.
 
         Args:
             connection (:class:`warmachine.base.Connection'): Connection object
                 to use.
-            user_id (str): User name or id to send the message to.
+            user (str): User to send the message to.
             channel (str): The channel the standup is for
             pester (int): Number of seconds to wait until asking the user again.
                 Use 0 to disable
         """
-        dm_id = connection.get_dm_id_by_user(user_id)
+        self.log.debug('Messaging user: {}'.format(user))
 
-        self.log.debug('Messaging user: {} ({})'.format(
-            connection.user_map[user_id], user_id))
+        if user in self.users_awaiting_reply:
+            self.users_awaiting_reply[user]['for_channels'].append(channel)
 
-        self.users_awaiting_reply[dm_id] = {
-            'for_channel': channel,
-            'user': user_id
-        }
+            self.log.debug('Adding to list of users waiting on a reply for: '
+                           '{}'.format(
+                    self.users_awaiting_reply[user]))
+        else:
+            self.users_awaiting_reply[user] = {
+                'for_channels': [channel, ],
+            }
 
-        self.log.debug('Adding to list of users waiting on a reply for: '
-                       '{}'.format(pformat(self.users_awaiting_reply[dm_id])))
 
         await connection.say('What did you do yesterday? What will you '
                               'do today? do you have any blockers? '
-                             '(standup for:{})'.format(channel), dm_id)
+                             '(standup for:{})'.format(channel), user)
 
         if pester > 0:
             f = self._loop.call_later(
                 pester, functools.partial(
-                    self.pester_schedule_func, connection, user_id, channel,
+                    self.pester_schedule_func, connection, user, channel,
                     pester))
-            self.users_awaiting_reply[dm_id]['pester_task'] = f
+            self.users_awaiting_reply[user]['pester_task'] = f
 
 
     @classmethod

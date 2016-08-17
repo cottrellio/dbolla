@@ -26,13 +26,6 @@ class Connection(object):
         raise NotImplementedError('{} must implement `read` method'.format(
             self.__class__.__name__))
 
-    def get_users_by_channel(self, channel):
-        """
-        Return a list of users who are in the provided channel
-        """
-        raise NotImplementedError('{} must implement `get_users_by_channel` '
-                                  'method'.format(self.__class__.__name__))
-
     def id(self):
         """
         Unique ID for this connection. Since there can be more than one
@@ -44,4 +37,11 @@ class Connection(object):
            str: Unique ID for this connection object
         """
         raise NotImplementedError('{} must implement `id` method'.format(
+            self.__class__.__name__))
+
+    def say(self, message, destination):
+        """
+        Async method that a plugin can use to send a message to a channel or user.
+        """
+        raise NotImplementedError('{} must implement `say` method'.format(
             self.__class__.__name__))

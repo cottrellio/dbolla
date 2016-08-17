@@ -106,7 +106,7 @@ class Bot(object):
         if hasattr(mod, cls_name):
             cls = getattr(mod, cls_name)()
 
-        self.loaded_plugins.append(cls)
+            self.loaded_plugins.append(cls)
 
     def reload_plugin(self, path):
         """

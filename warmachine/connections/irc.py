@@ -36,12 +36,15 @@ class AioIRC(Connection):
         self.writer.write('USER {} 8 * :War Machine\r\n'.format(
             self.user).encode())
 
+        self.status = CONNECTED
+
         return True
 
     @asyncio.coroutine
     def read(self):
         if self.reader.at_eof():
             raise Exception('eof')
+
         if self.reader:
             message = yield from self.reader.readline()
 
@@ -61,4 +64,4 @@ class AioIRC(Connection):
     @property
     @memoize
     def id(self):
-        return 'asdfasdf'
+        from hashlib import md5

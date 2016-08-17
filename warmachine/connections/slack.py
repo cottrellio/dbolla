@@ -27,6 +27,7 @@ class SlackWS(Connection):
         self.reconnect_url = ''
 
         self.channel_map = {}  # channel and im info keyed by the slack id
+        self.channel_name_to_id = {} # slack channel/group name mapped to the id
         self.user_map = {}     # user info keyed by their slack id
         self.user_nick_to_id = {}  # slack user id mapped to the (nick)name
 
@@ -46,21 +47,26 @@ class SlackWS(Connection):
         self.host = self.authenticate()
         self.log.info('Connecting to {}'.format(self.host))
         self.ws = await websockets.connect(self.host)
+        self.STATUS = CONNECTED
+
+        return True
 
     async def read(self):
         if self.ws:
             message = json.loads(await self.ws.recv())
             # Slack is acknowledging a message was sent. Do nothing
-            if 'type' not in message and 'reply_to' in message:
+            if 'reply_to' in message:
                 # {'ok': True,
                 #  'reply_to': 1,
                 #  'text': "['!whois', 'synic']",
                 #  'ts': '1469743355.000150'}
+                self.log.debug('Ignoring reply_to message: {}'.format(
+                    pformat(message)))
                 return
 
-            self.log.debug('new message parsed: {}'.format(message))
-            # Handle actual messages
+            self.log.debug('new slack message: {}'.format(pformat(message)))
             if message['type'] == 'message' and 'subtype' not in message:
+                # Handle text messages from users
                 return await self.process_message(message)
             else:
                 if 'subtype' in message:
@@ -69,6 +75,8 @@ class SlackWS(Connection):
                     msgtype = '{}_{}'.format(
                         message['type'], message['subtype'])
                 else:
+                    # This is a non-message event from slack.
+                    # https://api.slack.com/events
                     msgtype = message['type']
 
                 # Look for on_{type} methods to pass the dictionary to for
@@ -80,18 +88,21 @@ class SlackWS(Connection):
                     self.log.debug('{} does not exist for message: {}'.format(
                         func_name, message))
 
-    async def say(self, message, destination_id):
+    async def say(self, message, destination):
         """
         Say something in the provided channel or IM by id
         """
         # If the destination is a user, figure out the DM channel id
-        if destination_id.startswith('U'):
-            destination_id = self.get_dm_id_by_user(destination_id)
+        if destination and destination.startswith('#'):
+            destination = self.channel_name_to_id[destination.replace('#','')]
+        else:
+            _user = self.user_nick_to_id[destination]
+            destination = self.get_dm_id_by_user(_user)
 
         message = {
             'id': 1,  # TODO: this should be a get_msgid call or something
             'type': 'message',
-            'channel': destination_id,
+            'channel': destination,
             'text': str(message)
         }
         self.log.debug("Saying {}".format(message))
@@ -124,25 +135,24 @@ class SlackWS(Connection):
             raise Exception('Slack Error: {}'.format(
                 self._info.get('error', 'Unknown Error')))
 
-        self.process_connect_info()
+        # Slack returns a huge json struct with a bunch of information
+        self.process_connect_info(self._info)
 
         self.log.debug('Got websocket url: {}'.format(self._info.get('url')))
         return self._info.get('url')
 
-    def process_connect_info(self):
+    def process_connect_info(self, info):
         """
         Processes the connection info provided by slack
         """
-        if not self._info:
+        # If there is nothing to process then return
+        if not info:
             return
-        with open('slack_info.json', 'w') as f:
-            f.write(pformat(self._info))
-
-        self.status = CONNECTED
 
         # Save the bot's id
         try:
             self.my_id = self._info['self'].get('id', '000')
+            self.nick = self._info['self'].get('name', None)
         except KeyError:
             self.log.error('Unable to read self section of connect info')
 
@@ -158,26 +168,35 @@ class SlackWS(Connection):
         # Map Channels
         for c in self._info.get('channels', []):
             self.channel_map[c['id']] = c
+            self.channel_name_to_id[c['name']] = c['id']
 
         for g in self._info.get('groups', []):
             self.channel_map[g['id']] = g
+            self.channel_name_to_id[g['name']] = g['id']
 
     async def process_message(self, msg):
-        # Built-in !whois action
         if 'text' not in msg:
             raise Exception(msg)
+
+        # Built-in !whois command. Return information about a particular user.
         if msg['text'].startswith('!whois'):
             nicknames = msg['text'].split(' ')[1:]
             for n in nicknames:
                 await self.say(pformat(self.user_map[self.user_nick_to_id[n]]),
                                msg['channel'])
             return
-        elif msg['text'].startswith('!looptime'):
-            await self.say(self._loop.time(), msg['channel'])
+
+        # Map the slack ids to usernames and channels/groups names
+        user_nickname = self.user_map[msg['user']]['name']
+        if msg['channel'].startswith('D'):
+            # This is a private message
+            channel = None
+        else:
+            channel = '#{}'.format(self.channel_map[msg['channel']]['name'])
 
         retval = {
-            'sender': msg['user'],
-            'channel': msg['channel'],
+            'sender': user_nickname,
+            'channel': channel,
             'message': msg['text']
         }
         return retval
@@ -191,16 +210,15 @@ class SlackWS(Connection):
         https://api.slack.com/events/user_change
         """
         user_info = msg['user']
-        try:
-            old_nick = self.user_map[user_info['id']]['nick']
-        except KeyError as e:
-            old_nick = None
-            self.log.exception('KeyError: {}'.format(e))
-            self.log.exception('{}'.format(msg))
 
         self.user_map[user_info['id']] = user_info
 
         # Update the nick mapping if the user changed their nickname
+        try:
+            old_nick = self.user_map[user_info['id']]['nick']
+        except KeyError as e:
+            old_nick = None
+
         if old_nick and old_nick != user_info['nick']:
             del self.user_nick_to_id[old_nick]
             self.user_nick_to_id[user_info['nick']] = user_info['id']
@@ -225,6 +243,7 @@ class SlackWS(Connection):
         ))
         self.user_map[msg['user']]['presence'] = msg['presence']
 
+    @memoize  # the dm id should never change
     def get_dm_id_by_user(self, user_id):
         """
         Return the channel id for a direct message to a specific user.
@@ -251,8 +270,9 @@ class SlackWS(Connection):
 
         return data['channel']['id']
 
-
     def get_users_by_channel(self, channel):
+        channel = self.channel_name_to_id[channel.replace('#', '')]
+
         if channel.startswith('G'):
             key = 'group'
         elif channel.startswith('C'):
@@ -267,14 +287,17 @@ class SlackWS(Connection):
                 'channel': channel,
             }))
 
-        self.log.debug(url)
+        self.log.debug('Gathering list of users for channel {} from: {}'.format(
+            channel, url))
         req = urllib.request.Request(url)
         r = json.loads(urllib.request.urlopen(req).read().decode('utf-8'))
 
-        self.log.debug(r)
+        users = []
+        for u_id in r[key]['members']:
+            users.append(self.user_map[u_id]['name'])
 
-        self.log.debug(pformat(r[key]['members']))
-        return r[key]['members']
+        self.log.debug(pformat(users))
+        return users
 
     async def on_group_join(self, channel):
         """

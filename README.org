@@ -24,7 +24,7 @@ Simply run the command:
 * Writing a Connection
 To write a new connection protocol you must inherit from
 ~warmachine.connections.base.Connection~. This class defines an interface you
-must implement to support the plugins plugins.
+must implement to support the plugins.
 ** ~__config_prefix__~
 This global is used to decide which connection to use when it is found in the
 config file. E.g. IRC uses ~'irc'~ and Slack uses ~'slack'~. It should be
@@ -47,9 +47,12 @@ return value should be formatted in the following format:
     'message': 'The message that was received',
 }
 #+END_SRC
+** ~say(message, destination)~
+This method is used by plugins to send a message to a channel or user.
 ** ~id~
-This should return a unique id used to identify this particular connection. As
-an example, the IRC connection uses something like this:
+This should return a unique id used to identify this particular connection. This
+is used by plugins when saving state. As an example, the IRC connection uses
+something like this:
 
 #+BEGIN_SRC python
 @property
@@ -60,3 +63,6 @@ def id(self):
     value = '{}-{}'.format(self.host, self.nick)
     return md5(value.encode()).hexdigest()
 #+END_SRC
+** ~get_users_by_channel(channel)~
+This method should return a list of all users (including the bot) for the
+connection.
