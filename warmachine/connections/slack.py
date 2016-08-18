@@ -265,7 +265,7 @@ class SlackWS(Connection):
         data = json.loads(r)
 
         if not data['ok']:
-            raise Exception(data)
+            self.log.error(data)
             return
 
         return data['channel']['id']

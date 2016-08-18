@@ -136,7 +136,7 @@ class StandUpPlugin(WarMachinePlugin):
         # If no users are provided, display the users currently being ignored
         # ======================================================================
         elif cmd == '!standup-ignore' and channel \
-             and channel in self.standup_schedules:
+             and channel in self.standup_schedules:  # noqa - indent level
             if parts:
                 users_to_ignore = ''.join(parts).split(' ')
                 for u in users_to_ignore:
@@ -156,7 +156,7 @@ class StandUpPlugin(WarMachinePlugin):
             await connection.say('Currently ignoring {}'.format(ignoring),
                                  channel)
         elif cmd == '!standup-unignore' and channel \
-             and channel in self.standup_schedules:
+             and channel in self.standup_schedules:  # noqa - indent level
             if not parts:
                 return
 
@@ -179,8 +179,8 @@ class StandUpPlugin(WarMachinePlugin):
         # ======================================================================
         # !standup-waiting_replies
         #
-        # Report the data struct of users we are waiting on a reply from  to the
-        # requesting user.
+        # Report the data struct of users we are waiting on a reply from  to
+        # the requesting user.
         # ======================================================================
         elif not channel and cmd == '!standup-waiting_replies':
             self.log.info('Reporting who we are waiting on replies for to '
@@ -194,7 +194,7 @@ class StandUpPlugin(WarMachinePlugin):
         """
         Schedules a standup by creating a Task to be run in the future. This
         populates ``self.standup_schedules[channel]`` with the following keys:
-         - ``f`` (:class:`asyncio.Task`): This is the asyncio task object.
+         - ``future`` (:class:`asyncio.Task`): This is the asyncio task object.
          - ``datetime`` (:class:`datetime.datetime`): The datetime of when the
             standup will run next.
          - ``time24h`` (str): 24 hour time the schedule should be executed at.
@@ -217,9 +217,9 @@ class StandUpPlugin(WarMachinePlugin):
 
         # Don't overwrite existing setting if they exist
         if channel in self.standup_schedules:
-            self.standup_schedules[channel]['f'].cancel()
+            self.standup_schedules[channel]['future'].cancel()
 
-            self.standup_schedules[channel]['f'] = f
+            self.standup_schedules[channel]['future'] = f
             self.standup_schedules[channel]['datetime'] = next_standup
             self.standup_schedules[channel]['time24h'] = time24h
         else:
@@ -258,13 +258,14 @@ class StandUpPlugin(WarMachinePlugin):
         This function is scheduled to remove old standup messages so that the
         user is asked about standup the following day.
         """
+        self.log.info('Clearing old standup message for {}'.format(user))
         del self.users_awaiting_reply[user]['clear_standup_msg_f']
         del self.users_awaiting_reply[user]['standup_msg']
 
     async def start_standup(self, connection, channel):
         """
-        Notify the channel that the standup is about to begin, then loop through
-        all the users in the channel asking them report their standup.
+        Notify the channel that the standup is about to begin, then loop
+        through all the users in the channel asking them report their standup.
         """
         users = connection.get_users_by_channel(channel)
         if not users:
@@ -285,7 +286,8 @@ class StandUpPlugin(WarMachinePlugin):
             else:
                 await self.standup_priv_msg(connection, u, channel)
 
-    async def standup_priv_msg(self, connection, user, channel, pester=600):
+    async def standup_priv_msg(self, connection, user, channel, pester=600,
+                               pester_count=0):
         """
         Send a private message to ``user`` asking for their standup update.
 
@@ -294,8 +296,10 @@ class StandUpPlugin(WarMachinePlugin):
                 to use.
             user (str): User to send the message to.
             channel (str): The channel the standup is for
-            pester (int): Number of seconds to wait until asking the user again.
-                Use 0 to disable
+            pester (int): Number of seconds to wait until asking the user
+                again. Use 0 to disable
+            pester_count (int): An internal counter to stop pestering after
+                awhile.
         """
         self.log.debug('Messaging user: {}'.format(user))
 
@@ -303,27 +307,24 @@ class StandUpPlugin(WarMachinePlugin):
             # Don't readd an existing channel
             if channel not in self.users_awaiting_reply[user]['for_channels']:
                 self.users_awaiting_reply[user]['for_channels'].append(channel)
-
-            self.log.debug('Adding to list of users waiting on a reply for: '
-                           '{}'.format(
-                    self.users_awaiting_reply[user]))
         else:
+            self.log.debug('Waiting user {} for a reply '.format(user))
             self.users_awaiting_reply[user] = {
                 'for_channels': [channel, ],
             }
 
-
         await connection.say('What did you do yesterday? What will you '
-                              'do today? do you have any blockers? '
+                             'do today? do you have any blockers? '
                              '(standup for:{})'.format(channel), user)
 
-        if pester > 0:
+        if pester > 0 and pester_count <= 6:
+            self.log.info('Scheduling pester for {} {}m from now'.format(
+                user, pester/60))
             f = self._loop.call_later(
                 pester, functools.partial(
                     self.pester_schedule_func, connection, user, channel,
-                    pester))
+                    pester, pester_count+1))
             self.users_awaiting_reply[user]['pester_task'] = f
-
 
     @classmethod
     def get_next_standup_secs(cls, time24h):
@@ -335,8 +336,8 @@ class StandUpPlugin(WarMachinePlugin):
             should run on Mon-Fri
 
         Returns:
-            datetime: Datetime object representing the next datetime the standup
-            will begin
+            datetime: Datetime object representing the next datetime the
+                standup will begin
         """
         now = datetime.now()
 
