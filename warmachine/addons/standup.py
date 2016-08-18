@@ -67,7 +67,7 @@ class StandUpPlugin(WarMachinePlugin):
                 data['pester_task'].cancel()
                 data['pester_task'] = None
 
-            announce_message = '{}: {}'.format(
+            announce_message = '*@{}*: {}'.format(
                 user_nick,
                 message['message']
             )
