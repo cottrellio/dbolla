@@ -16,6 +16,7 @@ class StandUpPlugin(WarMachinePlugin):
             !standup-add <24 hr time to kick off>
             !standup-remove
         Direct Message:
+            !standup-ignore [users]
             !standup-schedules
             !standup-waiting_replies
     """
@@ -128,7 +129,7 @@ class StandUpPlugin(WarMachinePlugin):
 
         # ======================================================================
         # !standup-ignore
-        # !standup-ignore <comma seperated list of users to ignore>
+        # !standup-ignore <space seperated list of users to ignore>
         #
         # Ignore users provided when private messaging asking the standup
         # questions.
@@ -137,7 +138,7 @@ class StandUpPlugin(WarMachinePlugin):
         elif cmd == '!standup-ignore' and channel \
              and channel in self.standup_schedules:
             if parts:
-                users_to_ignore = ''.join(parts).split(',')
+                users_to_ignore = ''.join(parts).split(' ')
                 for u in users_to_ignore:
                     if u not in self.standup_schedules[channel]['ignoring']:
                         self.log.info('Ignoring {} in channel {}'.format(
