@@ -346,16 +346,16 @@ class StandUpPlugin(WarMachinePlugin):
         next_standup = datetime(now.year, now.month, now.day,
                                 standup_hour, standup_minute)
 
-        # If we've already past the time for today, schedule it for that time on the
-        # next weekday
-        if now > next_standup:
-            # if it's friday, wait 72 hours
+        # If we've already past the time for today, schedule it for that time
+        # on the next weekday
+        if now > next_standup or now.isoweekday() > 4:
+            # if it's friday(5), wait 72 hours
             if now.isoweekday() == 5:
                 hours = 72
-            # if it's saturday, wait 48
+            # if it's saturday(6), wait 48
             elif now.isoweekday() == 6:
                 hours = 48
-            # if it's sunday-thur wait 24
+            # if it's sunday(7)-thur(4) wait 24
             else:
                 hours = 24
 
