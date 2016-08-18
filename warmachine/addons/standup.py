@@ -299,7 +299,9 @@ class StandUpPlugin(WarMachinePlugin):
         self.log.debug('Messaging user: {}'.format(user))
 
         if user in self.users_awaiting_reply:
-            self.users_awaiting_reply[user]['for_channels'].append(channel)
+            # Don't readd an existing channel
+            if channel not in self.users_awaiting_reply[user]['for_channels']:
+                self.users_awaiting_reply[user]['for_channels'].append(channel)
 
             self.log.debug('Adding to list of users waiting on a reply for: '
                            '{}'.format(
