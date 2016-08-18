@@ -191,7 +191,19 @@ class StandUpPlugin(WarMachinePlugin):
 
     def schedule_standup(self, connection, channel, time24h):
         """
-        Schedules a standup by creating a Task to be run in the future.
+        Schedules a standup by creating a Task to be run in the future. This
+        populates ``self.standup_schedules[channel]`` with the following keys:
+         - ``f`` (:class:`asyncio.Task`): This is the asyncio task object.
+         - ``datetime`` (:class:`datetime.datetime`): The datetime of when the
+            standup will run next.
+         - ``time24h`` (str): 24 hour time the schedule should be executed at.
+         - ``ignoring`` (list): List of usernames to ignore when asking for
+            their standup update.
+
+        Args:
+            connection (:class:`Connection`): the connection
+            channel (str): channel name to schedule standup for
+            time24h (str): The 24 hour time to start the standup at
         """
         next_standup = self.get_next_standup_secs(time24h)
 
@@ -202,12 +214,20 @@ class StandUpPlugin(WarMachinePlugin):
             next_standup_secs, functools.partial(
                 self.standup_schedule_func, connection, channel))
 
-        self.standup_schedules[channel] = {
-            'future': f,
-            'datetime': next_standup,
-            'time24h': time24h,
-            'ignoring': [],
-        }
+        # Don't overwrite existing setting if they exist
+        if channel in self.standup_schedules:
+            self.standup_schedules[channel]['f'].cancel()
+
+            self.standup_schedules[channel]['f'] = f
+            self.standup_schedules[channel]['datetime'] = next_standup
+            self.standup_schedules[channel]['time24h'] = time24h
+        else:
+            self.standup_schedules[channel] = {
+                'future': f,
+                'datetime': next_standup,
+                'time24h': time24h,
+                'ignoring': [],
+            }
 
         self.log.info('New schedule added to channel {} for {}'.format(
             channel, time24h))
