@@ -242,7 +242,8 @@ class StandUpPlugin(WarMachinePlugin):
         self.log.info('Executing standup for channel {}'.format(channel))
         asyncio.ensure_future(self.start_standup(connection, channel))
 
-    def pester_schedule_func(self, connection, user, channel, pester):
+    def pester_schedule_func(self, connection, user, channel, pester,
+                             pester_count=0):
         """
         Non-async function used to schedule pesters for a user.
 
@@ -251,7 +252,7 @@ class StandUpPlugin(WarMachinePlugin):
         self.log.info('Pestering user {} to give a standup for channel '
                       '{} (interval: {}s)'.format(user, channel, pester))
         asyncio.ensure_future(self.standup_priv_msg(
-            connection, user, channel, pester))
+            connection, user, channel, pester, pester_count))
 
     def clear_old_standup_message_schedule_func(self, user):
         """
