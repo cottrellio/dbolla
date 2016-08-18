@@ -97,6 +97,11 @@ class SlackWS(Connection):
             destination = self.channel_name_to_id[destination.replace('#','')]
         else:
             _user = self.user_nick_to_id[destination]
+
+            # slack doesn't allow bots to message other bots
+            if self.user_map[_user]['is_bot']:
+                return
+
             destination = self.get_dm_id_by_user(_user)
 
         message = {
