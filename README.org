@@ -1,3 +1,5 @@
+#  LocalWords: asyncio async plugin
+
 * Setting up the bot
 D'bolla is a no bullshit extensible IRC/Slack bot written for Python 3.5 using
 asyncio.
@@ -21,6 +23,56 @@ Simply run the command:
 #+END_SRC
 
 * Writing a Plugin
+To write a new plugin you must inherit from
+~warmachine.addons.base.WarMachinePlugin~. This class defines an interface you
+must implement in order to interact with connections. If you override ~__init__~
+you must call ~super()~.
+** ~self._loop~
+This is given to you access to the asyncio loop. This is useful for scheduling
+tasks to be run later.
+** ~self.log~
+This is a logger that you should use when logging messages.
+** ~recv_msg(channel, message)~
+~recv_msg~ is the only required method for a plugin. It is called for every
+plugin every time a connection receives a message. It takes the arguments
+~connection~ and ~message~. ~connection~ is the Connection object which allows
+you to interact with that chat server. ~message~ is a dictionary containing
+information about the message received. It has the following format:
+
+#+BEGIN_SRC python
+{
+    'sender': 'sender nickname',
+    'channel': '#channel_name or None for private messages',
+    'message': 'The message that was received',
+}
+#+END_SRC
+
+You will parse ~message['message']~ for what you are interested in and take some
+action based on what was found.
+
+For example:
+
+#+BEGIN_SRC python
+async def recv_msg(connection, message):
+    """
+    A simple echo 'server'.
+    """
+    # if the message starts with !echo, and it was said in a channel (not a
+    # private message)...
+    if message['message'].startswith('!echo') and message['channel']:
+        # Strip the command !echo from the message
+        try:
+            msg_to_repeat = ' '.join(message['message'].split(' ')[1:])
+        except IndexError:
+            # There was nothing to echo
+            return
+        # Repeat the remainder of the received message
+        await connection.say(msg_to_repeat, message['channel'])
+#+END_SRC
+** ~on_connect(connection)~
+This method is called when a connection successfully connects and takes the
+single argument ~connection~. Use this method to do any start up initialization
+you may want to do such as create configuration files that don't exist yet.
 * Writing a Connection
 To write a new connection protocol you must inherit from
 ~warmachine.connections.base.Connection~. This class defines an interface you
