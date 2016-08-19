@@ -107,8 +107,12 @@ class SlackWS(Connection):
         else:
             _user = self.user_nick_to_id[destination]
 
+            if 'is_bot' not in self.user_map[_user]:
+                self.error('is_bot property not found for user {}'.format(
+                    message['destination']))
+
             # slack doesn't allow bots to message other bots
-            if self.user_map[_user]['is_bot']:
+            if '#' not in destination and self.user_map[_user]['is_bot']:
                 return
 
             destination = self.get_dm_id_by_user(_user)
@@ -191,7 +195,7 @@ class SlackWS(Connection):
 
     async def process_message(self, msg):
         if 'text' not in msg:
-            raise Exception(msg)
+            self.log.error('key "text" not found in message: {}'.format(msg))
 
         # Built-in !whois command. Return information about a particular user.
         if msg['text'].startswith('!whois'):
