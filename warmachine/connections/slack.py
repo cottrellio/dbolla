@@ -112,7 +112,8 @@ class SlackWS(Connection):
                     destination))
 
             # slack doesn't allow bots to message other bots
-            if '#' not in destination and self.user_map[_user]['is_bot']:
+            if '#' not in destination and (self.user_map[_user]['is_bot'] or\
+                                           self.user_map[_user]['deleted']):
                 return
 
             destination = self.get_dm_id_by_user(_user)
