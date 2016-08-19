@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timedelta
 import functools
 import json
+import os
 from pprint import pformat
 
 from .base import WarMachinePlugin
@@ -20,6 +21,7 @@ class StandUpPlugin(WarMachinePlugin):
             !standup-schedules
             !standup-waiting_replies
     """
+    SETTINGS_FILENAME = 'standup_schedules.json'
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -37,6 +39,15 @@ class StandUpPlugin(WarMachinePlugin):
         # }
         self.users_awaiting_reply = {}
         self.log.info('Loaded standup plugin')
+
+        self.settings_file = os.path.join(
+            self.config_dir, self.SETTINGS_FILENAME)
+
+        if not os.path.exists(self.settings_file):
+            self.log.info('Creating standup config file: {}'.format(
+                self.settings_file))
+            with open(self.settings_file, 'w') as f:
+                f.write('{}')
 
     def on_connect(self, connection):
         self.load_schedule(connection)
@@ -416,7 +427,7 @@ class StandUpPlugin(WarMachinePlugin):
                 data[channel][key] = self.standup_schedules[channel][key]
 
         data = {connection.id: data}
-        with open('/home/jason/.warmachine/standup_schedules.json', 'w') as f:
+        with open(self.settings_file, 'w') as f:
             f.write(json.dumps(data))
 
         self.log.info('Schedules saved to disk')
@@ -425,7 +436,7 @@ class StandUpPlugin(WarMachinePlugin):
         """
         Load the channel schedules from a file.
         """
-        with open('/home/jason/.warmachine/standup_schedules.json', 'r') as f:
+        with open(self.settings_file, 'r') as f:
             try:
                 data = json.loads(f.read())
             except Exception as e:

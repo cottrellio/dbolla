@@ -30,6 +30,8 @@ you must call ~super()~.
 ** ~self._loop~
 This is given to you access to the asyncio loop. This is useful for scheduling
 tasks to be run later.
+** ~self.config_dir~
+The directory to store any configuration files and other junk in.
 ** ~self.log~
 This is a logger that you should use when logging messages.
 ** ~recv_msg(channel, message)~
@@ -76,18 +78,21 @@ you may want to do such as create configuration files that don't exist yet.
 * Writing a Connection
 To write a new connection protocol you must inherit from
 ~warmachine.connections.base.Connection~. This class defines an interface you
-must implement to support the plugins.
+must implement to support the plugins. If you override ~__init__~ you must call
+~super()~.
 ** ~__config_prefix__~
 This global is used to decide which connection to use when it is found in the
 config file. E.g. IRC uses ~'irc'~ and Slack uses ~'slack'~. It should be
 defined somewhere near the top of your file.
-** ~connect()~
+** ~self.config_dir~
+The directory to store any configuration files and other junk in.
+** ~self.connect()~
 D'bolla uses python 3's asyncio to manage multiple connections concurrently thus
 you should use ~asyncio.open_connection~ to create your connection. Once you
 have successfully connected you must set ~self.status~ to
 ~warmachine.connections.base.CONNECTED~. This indicates the connection is ready
 to use.
-** ~read()~
+** ~self.read()~
 This method is constantly checked in a loop by the ~Bot~ class. When a message
 is returned it is passed into the ~recv_msg~ method in all loaded plugins. This
 return value should be formatted in the following format:
@@ -99,9 +104,9 @@ return value should be formatted in the following format:
     'message': 'The message that was received',
 }
 #+END_SRC
-** ~say(message, destination)~
+** ~self.say(message, destination)~
 This method is used by plugins to send a message to a channel or user.
-** ~id~
+** ~self.id~
 This should return a unique id used to identify this particular connection. This
 is used by plugins when saving state. As an example, the IRC connection uses
 something like this:
@@ -115,6 +120,6 @@ def id(self):
     value = '{}-{}'.format(self.host, self.nick)
     return md5(value.encode()).hexdigest()
 #+END_SRC
-** ~get_users_by_channel(channel)~
+** ~self.get_users_by_channel(channel)~
 This method should return a list of all users (including the bot) for the
 connection.

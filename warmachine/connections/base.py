@@ -3,6 +3,9 @@ CONNECTED = 'Connected'
 
 
 class Connection(object):
+    def __init__(self):
+        self.config_dir = None
+
     def connect(self, *args, **kwargs):
         """
         This is called by the main start method. It should prepare your

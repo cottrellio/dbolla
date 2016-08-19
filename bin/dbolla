@@ -43,6 +43,13 @@ log_config = {
 class Bot(object):
     def __init__(self, settings):
         self.log = logging.getLogger(self.__class__.__name__)
+
+        self.config_dir = os.path.expanduser('~/.warmachine')
+        if not os.path.exists(self.config_dir):
+            self.log.info('Creating config directory: {}'.format(
+                self.config_dir))
+            os.makedirs(self.config_dir)
+
         self._loop = asyncio.get_event_loop()
 
         self.settings = settings
@@ -55,8 +62,6 @@ class Bot(object):
         self.load_plugin('warmachine.addons.giphy.GiphySearch')
         self.load_plugin('warmachine.addons.standup.StandUpPlugin')
 
-        # TODO: Ensure the config directory has been created
-
     def start(self):
         for connection in self.connections:
             t = asyncio.ensure_future(connection.connect())
@@ -65,6 +70,7 @@ class Bot(object):
         self._loop.run_forever()
 
     def add_connection(self, connection):
+        connection.config_dir = self.config_dir
         self.connections[connection] = {}
 
     def on_connect(self, connection, task):
@@ -104,9 +110,9 @@ class Bot(object):
         mod = import_module(mod_path)
 
         if hasattr(mod, cls_name):
-            cls = getattr(mod, cls_name)()
+            obj = getattr(mod, cls_name)(config_dir=self.config_dir)
 
-            self.loaded_plugins.append(cls)
+            self.loaded_plugins.append(obj)
 
     def reload_plugin(self, path):
         """
