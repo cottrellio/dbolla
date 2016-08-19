@@ -1,4 +1,5 @@
 [irc:freenode]
+enable=true
 # Address to the server Defaut: irc.freenode.org
 server=irc.freenode.org
 # Port to the server Default: 6697
@@ -15,6 +16,6 @@ password=
 [slack:myslack]
 # In your Slack account go to the admin section followed by
 # "Custom Integrations". Click on bots and create a new bot user.
-
+enable=false
 # Slack bot API token
 token=xoxb-random_acharacters
