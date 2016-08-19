@@ -257,7 +257,7 @@ class StandUpPlugin(WarMachinePlugin):
     def clear_old_standup_message_schedule_func(self, user):
         """
         This function is scheduled to remove old standup messages so that the
-        user is asked about standup the following day.
+        user is asked for updates on the next standup.
         """
         self.log.info('Clearing old standup message for {}'.format(user))
         del self.users_awaiting_reply[user]['clear_standup_msg_f']
@@ -287,6 +287,17 @@ class StandUpPlugin(WarMachinePlugin):
             else:
                 await self.standup_priv_msg(connection, u, channel)
 
+        # schedule a function to run in 12 hours to clear out this channel from
+        # self.users_awaiting_reply for all `users`.
+        # This is assuming that after 12 hours, nobody cares about the report
+        # from people who never reported earlier. It will prevent flooding
+        # "tomorrow's" response to channels whose standup is scheduled for
+        # later.
+        self._loop.call_later(8*(60*60),  # 8 hours
+                              self.clean_channel_from_waiting_replies, channel,
+                              users)
+
+
     async def standup_priv_msg(self, connection, user, channel, pester=600,
                                pester_count=0):
         """
@@ -314,11 +325,13 @@ class StandUpPlugin(WarMachinePlugin):
                 'for_channels': [channel, ],
             }
 
+        for_channels = self.users_awaiting_reply[user]['for_channels']
         await connection.say('What did you do yesterday? What will you '
                              'do today? do you have any blockers? '
-                             '(standup for:{})'.format(channel), user)
+                             '(standup for:{})'.format(
+                                 ', '.join(for_channels)), user)
 
-        if pester > 0 and pester_count <= 6:
+        if pester > 0 and pester_count <= 5:
             self.log.info('Scheduling pester for {} {}m from now'.format(
                 user, pester/60))
             f = self._loop.call_later(
@@ -366,6 +379,31 @@ class StandUpPlugin(WarMachinePlugin):
 
         return next_standup
 
+    def clean_channel_from_waiting_replies(self, channel, users):
+        """
+        This clears ``channel`` from the list of interested channels for a
+        user's stand up, so that when the next stand up comes and they answer,
+        the other channels won't recieve information they are most likely not
+        interested in anymore
+
+        Args:
+            channel (str): The channel to clear out
+            users (list): List of users to check for
+        """
+        for u in users:
+            if u in self.users_awaiting_reply:
+                self.log.info('Clearing channel {} from list of waiting '
+                              'channels for user {}'.format(channel, u))
+                self.users_awaiting_reply[u]['for_channels'].remove(channel)
+
+                # if that was the last channel, kill any pester tasks
+                if not self.users_awaiting_reply[u]['for_channels'] and \
+                   self.users_awaiting_reply[u]['pester_task']:
+                    self.log.info('No more interested channels for {}. '
+                                  'Cancelling pester.'.format(u))
+                    self.users_awaiting_reply[u]['pester_task'].cancel()
+                    del self.users_awaiting_reply[u]['pester_task']
+
     def save_schedule(self, connection):
         """
         Save all channel schedules to a file.
@@ -393,6 +431,9 @@ class StandUpPlugin(WarMachinePlugin):
             except Exception as e:
                 self.log.debug('Error loading standup schedules: {}'.format(e))
                 return
+
+        if connection.id not in data:
+            return
 
         for channel in data[connection.id]:
             self.schedule_standup(

@@ -34,6 +34,8 @@ class SlackWS(Connection):
         self.my_id = '000'
 
         self.ws = None
+        # used to give messages an id. slack requirement
+        self._internal_msgid = 0
 
         self.status = INITALIZED
 
@@ -53,7 +55,14 @@ class SlackWS(Connection):
 
     async def read(self):
         if self.ws:
-            message = json.loads(await self.ws.recv())
+            try:
+                message = json.loads(await self.ws.recv())
+            except websockets.ConnectionClosed as e:
+                self.log.error('Connection Closed: {}'.format(e))
+                while not self.connect():
+                    self.error('Trying to reconnect...')
+                    await asyncio.sleep(300)
+                return
             # Slack is acknowledging a message was sent. Do nothing
             if 'reply_to' in message:
                 # {'ok': True,
@@ -61,10 +70,10 @@ class SlackWS(Connection):
                 #  'text': "['!whois', 'synic']",
                 #  'ts': '1469743355.000150'}
                 self.log.debug('Ignoring reply_to message: {}'.format(
-                    pformat(message)))
+                    message))
                 return
 
-            self.log.debug('new slack message: {}'.format(pformat(message)))
+            self.log.debug('new slack message: {}'.format(message))
             if message['type'] == 'message' and 'subtype' not in message:
                 # Handle text messages from users
                 return await self.process_message(message)
@@ -104,8 +113,9 @@ class SlackWS(Connection):
 
             destination = self.get_dm_id_by_user(_user)
 
+        self._internal_msgid += 1
         message = {
-            'id': 1,  # TODO: this should be a get_msgid call or something
+            'id': self._internal_msgid,
             'type': 'message',
             'channel': destination,
             'text': str(message)
@@ -301,7 +311,6 @@ class SlackWS(Connection):
         for u_id in r[key]['members']:
             users.append(self.user_map[u_id]['name'])
 
-        self.log.debug(pformat(users))
         return users
 
     async def on_group_join(self, channel):
