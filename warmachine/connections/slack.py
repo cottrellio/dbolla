@@ -58,8 +58,8 @@ class SlackWS(Connection):
             try:
                 message = json.loads(await self.ws.recv())
             except websockets.ConnectionClosed as e:
-                self.log.error('Connection Closed: {}'.format(e))
-                while not self.connect():
+                self.log.error('{}'.format(e))
+                while not await self.connect():
                     self.error('Trying to reconnect...')
                     await asyncio.sleep(300)
                 return

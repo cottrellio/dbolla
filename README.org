@@ -34,7 +34,7 @@ tasks to be run later.
 The directory to store any configuration files and other junk in.
 ** ~self.log~
 This is a logger that you should use when logging messages.
-** ~recv_msg(channel, message)~
+** ~self.recv_msg(channel, message)~
 ~recv_msg~ is the only required method for a plugin. It is called for every
 plugin every time a connection receives a message. It takes the arguments
 ~connection~ and ~message~. ~connection~ is the Connection object which allows
@@ -71,7 +71,7 @@ async def recv_msg(connection, message):
         # Repeat the remainder of the received message
         await connection.say(msg_to_repeat, message['channel'])
 #+END_SRC
-** ~on_connect(connection)~
+** ~self.on_connect(connection)~
 This method is called when a connection successfully connects and takes the
 single argument ~connection~. Use this method to do any start up initialization
 you may want to do such as create configuration files that don't exist yet.
