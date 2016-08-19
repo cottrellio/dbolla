@@ -108,7 +108,7 @@ class SlackWS(Connection):
             _user = self.user_nick_to_id[destination]
 
             if 'is_bot' not in self.user_map[_user]:
-                self.error('is_bot property not found for user {}'.format(
+                self.log.error('is_bot property not found for user {}'.format(
                     message['destination']))
 
             # slack doesn't allow bots to message other bots
