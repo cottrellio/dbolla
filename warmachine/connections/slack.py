@@ -74,6 +74,12 @@ class SlackWS(Connection):
                 return
 
             self.log.debug('new slack message: {}'.format(message))
+
+            # Sometimes there isn't a type in the message we receive
+            if 'type' not in message:
+                self.log.error('Received typeless message: {}'.format(message))
+                return
+
             if message['type'] == 'message' and 'subtype' not in message:
                 # Handle text messages from users
                 return await self.process_message(message)
