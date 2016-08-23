@@ -149,7 +149,7 @@ class StandUpPlugin(WarMachinePlugin):
         elif cmd == '!standup-ignore' and channel \
              and channel in self.standup_schedules:  # noqa - indent level
             if parts:
-                users_to_ignore = ''.join(parts).split(' ')
+                users_to_ignore = parts
                 for u in users_to_ignore:
                     if u not in self.standup_schedules[channel]['ignoring']:
                         self.log.info('Ignoring {} in channel {}'.format(
@@ -166,10 +166,37 @@ class StandUpPlugin(WarMachinePlugin):
 
             await connection.say('Currently ignoring {}'.format(ignoring),
                                  channel)
+
+        # ======================================================================
+        # !standup-unignore <space separated users>
+        #
+        # Remove users from the ignore list.
+        # ======================================================================
         elif cmd == '!standup-unignore' and channel \
              and channel in self.standup_schedules:  # noqa - indent level
-            if not parts:
-                return
+            removed_users = []  # Used for the message
+
+            if parts:
+                users_to_unignore = parts
+                for u in users_to_unignore:
+                    if u in self.standup_schedules[channel]['ignoring']:
+                        self.log.info('Unignoring {} in channel {}'.format(
+                            u, channel))
+                        self.standup_schedules[channel]['ignoring'].remove(u)
+                        removed_users.append(u)
+                self.save_schedule(connection)
+
+            if removed_users:
+                await connection.say('Removed {} from the ignore list'.format(
+                    ', '.join(removed_users)), channel)
+
+            ignoring = ', '.join(
+                self.standup_schedules[channel]['ignoring'])
+            if not ignoring:
+                ignoring = 'no one'
+
+            await connection.say('Currently ignoring {}'.format(ignoring),
+                                 channel)
 
         # ======================================================================
         # !standup-schedules
