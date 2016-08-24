@@ -320,7 +320,7 @@ class StandUpPlugin(WarMachinePlugin):
 
             if u in self.users_awaiting_reply and \
                'standup_msg' in self.users_awaiting_reply[u]:
-                await connection.say('{}: {}'.format(
+                await connection.say('*@{}*: {}'.format(
                     u, self.users_awaiting_reply[u]['standup_msg']), channel)
             else:
                 await self.standup_priv_msg(connection, u, channel)
