@@ -354,6 +354,15 @@ class StandUpPlugin(WarMachinePlugin):
         self.log.debug('Messaging user: {}'.format(user))
 
         if user in self.users_awaiting_reply:
+            if 'standup_msg' in self.users_awaiting_reply[user]:
+                await connection.say('*@{}*: {}'.format(
+                    user, self.users_awaiting_reply[user]['standup_msg']
+                ), channel)
+
+                self.users_awaiting_reply[user]['pester_task'].cancel()
+                self.users_awaiting_reply[user]['pester_task'] = None
+
+                return
             # Don't readd an existing channel
             if channel not in self.users_awaiting_reply[user]['for_channels']:
                 self.users_awaiting_reply[user]['for_channels'].append(channel)
@@ -362,6 +371,13 @@ class StandUpPlugin(WarMachinePlugin):
             self.users_awaiting_reply[user] = {
                 'for_channels': [channel, ],
             }
+
+        # They are already being bothered about it. It won't help to bother them
+        # for a different thing
+        if pester_count == 0 and \
+           'pester_task' in self.users_awaiting_reply[user] and \
+           self.users_awaiting_reply[user]['pester_task']:
+            return
 
         for_channels = self.users_awaiting_reply[user]['for_channels']
         await connection.say('What did you do yesterday? What will you '
