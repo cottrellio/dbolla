@@ -4,6 +4,7 @@ import logging
 from pprint import pformat
 from urllib.parse import urlencode
 import urllib.request
+import sys
 
 import websockets
 
@@ -46,7 +47,11 @@ class SlackWS(Connection):
         return md5(self.token.encode()).hexdigest()
 
     async def connect(self):
-        self.host = self.authenticate()
+        try:
+            self.host = self.authenticate()
+        except Exception:
+            self.log.exception('Error authenticating to slack')
+            return
         self.log.info('Connecting to {}'.format(self.host))
         self.ws = await websockets.connect(self.host)
         self.STATUS = CONNECTED
