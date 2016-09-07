@@ -73,7 +73,7 @@ class StandUpPlugin(WarMachinePlugin):
 
             for_channels = data['for_channels']
 
-            if 'pester_task' in data:
+            if 'pester_task' in data and data['pester_task']:
                 self.log.debug('Stopping pester for {}'.format(user_nick))
                 data['pester_task'].cancel()
                 data['pester_task'] = None
