@@ -316,6 +316,10 @@ class StandUpPlugin(WarMachinePlugin):
         for u in users:
             if u == connection.nick or \
                u in self.standup_schedules[channel]['ignoring']:
+                try:
+                    users.remove(u)
+                except ValueError:
+                    pass
                 continue
 
             if u in self.users_awaiting_reply and \
@@ -448,7 +452,11 @@ class StandUpPlugin(WarMachinePlugin):
             if u in self.users_awaiting_reply:
                 self.log.info('Clearing channel {} from list of waiting '
                               'channels for user {}'.format(channel, u))
-                self.users_awaiting_reply[u]['for_channels'].remove(channel)
+
+                try:
+                    self.users_awaiting_reply[u]['for_channels'].remove(channel)
+                except ValueError as e:
+                   pass
 
                 # if that was the last channel, kill any pester tasks
                 if not self.users_awaiting_reply[u]['for_channels'] and \
