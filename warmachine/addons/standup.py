@@ -389,7 +389,7 @@ class StandUpPlugin(WarMachinePlugin):
                              '(standup for:{})'.format(
                                  ', '.join(for_channels)), user)
 
-        if pester > 0 and pester_count <= 5:
+        if pester > 0 and pester_count <= 2:
             self.log.info('Scheduling pester for {} {}m from now'.format(
                 user, pester/60))
             f = self._loop.call_later(
