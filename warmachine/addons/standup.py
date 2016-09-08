@@ -307,6 +307,7 @@ class StandUpPlugin(WarMachinePlugin):
         through all the users in the channel asking them report their standup.
         """
         users = connection.get_users_by_channel(channel)
+        self.log.debug('Users found in {}: {}'.format(channel, users))
         if not users:
             self.log.error('Unable to get_users_by_channel for channel '
                            '{}. Skipping standup.'.format(channel))
@@ -316,10 +317,10 @@ class StandUpPlugin(WarMachinePlugin):
         for u in users:
             if u == connection.nick or \
                u in self.standup_schedules[channel]['ignoring']:
-                try:
-                    users.remove(u)
-                except ValueError:
-                    pass
+                # try:
+                #     users.remove(u)
+                # except ValueError:
+                #     pass
                 continue
 
             if u in self.users_awaiting_reply and \
