@@ -417,6 +417,11 @@ class SlackWS(Connection):
         #     }
         # }
 
+        def on_reaction_added(self, msg):
+            """
+            When someone adds a reaction to a message
+            """
+
 # Invited to a public channel
 #     2016-07-29 16:23:24,817 [DEBUG] SlackWS: on_channel_joined does not exist for message: {'type': 'channel_joined', 'chan
 # nel': {'members': ['U0286NL58', 'U1U05AF5J'], 'purpose': {'last_set': 0, 'creator': '', 'value': ''}, 'topic': {'last_s
