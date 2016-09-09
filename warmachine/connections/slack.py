@@ -78,8 +78,6 @@ class SlackWS(Connection):
                     message))
                 return
 
-            self.log.debug('new slack message: {}'.format(message))
-
             # Sometimes there isn't a type in the message we receive
             if 'type' not in message:
                 self.log.error('Received typeless message: {}'.format(message))
@@ -267,11 +265,11 @@ class SlackWS(Connection):
         """
         updates user's presence in ``self.user_map``
         """
-        self.log.debug('updated_presence: {} ({}) was: {} is_now: {}'.format(
-            msg['user'], self.user_map[msg['user']]['name'],
-            self.user_map[msg['user']].get('presence', '<undefined>'),
-            msg['presence']
-        ))
+        # self.log.debug('updated_presence: {} ({}) was: {} is_now: {}'.format(
+        #     msg['user'], self.user_map[msg['user']]['name'],
+        #     self.user_map[msg['user']].get('presence', '<undefined>'),
+        #     msg['presence']
+        # ))
         self.user_map[msg['user']]['presence'] = msg['presence']
 
     @memoize  # the dm id should never change
