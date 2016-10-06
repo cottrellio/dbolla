@@ -2,13 +2,13 @@ import asyncio
 import json
 import logging
 from pprint import pformat
+import time
 from urllib.parse import urlencode
 import urllib.request
-import sys
 
 import websockets
 
-from .base import Connection, INITALIZED, CONNECTED
+from .base import Connection, INITALIZED, CONNECTED, CONNECTING
 from ..utils.decorators import memoize
 
 #: Define slack as a config section prefix
@@ -28,7 +28,7 @@ class SlackWS(Connection):
         self.reconnect_url = ''
 
         self.channel_map = {}  # channel and im info keyed by the slack id
-        self.channel_name_to_id = {} # slack channel/group name mapped to the id
+        self.channel_name_to_id = {}  # slack channel/group name mapped to id
         self.user_map = {}     # user info keyed by their slack id
         self.user_nick_to_id = {}  # slack user id mapped to the (nick)name
 
@@ -37,6 +37,11 @@ class SlackWS(Connection):
         self.ws = None
         # used to give messages an id. slack requirement
         self._internal_msgid = 0
+        # used to give each ping a unique id
+        self._internal_pingid = 0
+
+        # track's lag
+        self.lag_in_ms = 0
 
         self.status = INITALIZED
 
@@ -52,11 +57,16 @@ class SlackWS(Connection):
         except Exception:
             self.log.exception('Error authenticating to slack')
             return
+        self.STATUS = CONNECTING
         self.log.info('Connecting to {}'.format(self.host))
         self.ws = await websockets.connect(self.host)
-        self.STATUS = CONNECTED
 
         return True
+
+    def on_hello(self, msg):
+        self.log.info('Connected to Slack')
+        self.STATUS = CONNECTED
+        self.start_ping()
 
     async def read(self):
         if self.ws:
@@ -68,14 +78,13 @@ class SlackWS(Connection):
                     self.error('Trying to reconnect...')
                     await asyncio.sleep(300)
                 return
+
             # Slack is acknowledging a message was sent. Do nothing
-            if 'reply_to' in message:
+            if 'reply_to' in message and 'type' not in message:
                 # {'ok': True,
                 #  'reply_to': 1,
                 #  'text': "['!whois', 'synic']",
                 #  'ts': '1469743355.000150'}
-                self.log.debug('Ignoring reply_to message: {}'.format(
-                    message))
                 return
 
             # Sometimes there isn't a type in the message we receive
@@ -112,7 +121,7 @@ class SlackWS(Connection):
         """
         # If the destination is a user, figure out the DM channel id
         if destination and destination.startswith('#'):
-            destination = self.channel_name_to_id[destination.replace('#','')]
+            destination = self.channel_name_to_id[destination.replace('#', '')]
         else:
             _user = self.user_nick_to_id[destination]
 
@@ -121,7 +130,7 @@ class SlackWS(Connection):
                     destination))
 
             # slack doesn't allow bots to message other bots
-            if '#' not in destination and (self.user_map[_user]['deleted'] or \
+            if '#' not in destination and (self.user_map[_user]['deleted'] or
                                            self.user_map[_user]['is_bot']):
                 return
 
@@ -207,14 +216,6 @@ class SlackWS(Connection):
         if 'text' not in msg:
             self.log.error('key "text" not found in message: {}'.format(msg))
 
-        # Built-in !whois command. Return information about a particular user.
-        if msg['text'].startswith('!whois'):
-            nicknames = msg['text'].split(' ')[1:]
-            for n in nicknames:
-                await self.say(pformat(self.user_map[self.user_nick_to_id[n]]),
-                               msg['channel'])
-            return
-
         # Map the slack ids to usernames and channels/groups names
         user_nickname = self.user_map[msg['user']]['name']
         if msg['channel'].startswith('D'):
@@ -228,6 +229,19 @@ class SlackWS(Connection):
             'channel': channel,
             'message': msg['text']
         }
+
+        _sender = retval['channel'] if retval['channel'] else retval['sender']
+        # Built-in !whois command. Return information about a particular user.
+        if retval['message'].startswith('!whois'):
+            nicknames = retval['message'].split(' ')[1:]
+            for n in nicknames:
+                await self.say(pformat(self.user_map[self.user_nick_to_id[n]]),
+                               _sender)
+            return
+        elif msg['text'].startswith('!slack-lag'):
+            await self.say('{}ms'.format(self.lag_in_ms), _sender)
+            return
+
         return retval
 
     def on_user_change(self, msg):
@@ -259,7 +273,6 @@ class SlackWS(Connection):
         https://api.slack.com/events/reconnect_url
         """
         # self.reconnect_url = msg['url']
-        # self.log.debug('updated_reconnect_url: {}'.format(self.reconnect_url))
 
     def on_presence_change(self, msg):
         """
@@ -310,14 +323,13 @@ class SlackWS(Connection):
             return
 
         url = 'https://slack.com/api/{}s.info?{}'.format(
-            key, urlencode(
-            {
+            key, urlencode({
                 'token': self.token,
                 'channel': channel,
             }))
 
-        self.log.debug('Gathering list of users for channel {} from: {}'.format(
-            channel, url))
+        self.log.debug('Gathering list of users for channel {} from: '
+                       '{}'.format(channel, url))
         req = urllib.request.Request(url)
         r = json.loads(urllib.request.urlopen(req).read().decode('utf-8'))
 
@@ -326,6 +338,30 @@ class SlackWS(Connection):
             users.append(self.user_map[u_id]['name'])
 
         return users
+
+    def start_ping(self, *args, **kwargs):
+        """
+        Starts the ping schedule to help keep the connection open.
+        """
+        asyncio.ensure_future(self.do_ping())
+
+    async def do_ping(self):
+        """
+        Send a ping to Slack
+        """
+        self._internal_pingid += 1
+        msg = json.dumps({
+            'id': self._internal_pingid,
+            'type': 'ping',
+            'time': time.time() * 1000,
+        })
+        await self._send(msg)
+        self._loop.call_later(4, self.start_ping)
+
+    def on_pong(self, msg):
+        now = time.time() * 1000
+
+        self.lag_in_ms = now - msg['time']
 
     async def on_group_join(self, channel):
         """
@@ -417,34 +453,89 @@ class SlackWS(Connection):
         #     }
         # }
 
-        def on_reaction_added(self, msg):
-            """
-            When someone adds a reaction to a message
-            """
+    def on_reaction_added(self, msg):
+        """
+        When someone adds a reaction to a message
+        """
 
-# Invited to a public channel
-#     2016-07-29 16:23:24,817 [DEBUG] SlackWS: on_channel_joined does not exist for message: {'type': 'channel_joined', 'chan
-# nel': {'members': ['U0286NL58', 'U1U05AF5J'], 'purpose': {'last_set': 0, 'creator': '', 'value': ''}, 'topic': {'last_s
-# et': 0, 'creator': '', 'value': ''}, 'is_member': True, 'is_channel': True, 'creator': 'U0286NL58', 'is_archived': Fals
-# e, 'unread_count_display': 0, 'id': 'C1WJU3ZU0', 'name': 'wm-test2', 'is_general': False, 'created': 1469830985, 'unrea
-# d_count': 0, 'latest': {'text': '<@U0286NL58|jason> has joined the channel', 'type': 'message', 'user': 'U0286NL58', 's
-# ubtype': 'channel_join', 'ts': '1469830985.000002'}, 'last_read': '1469830985.000002'}}
-# 2016-07-29 16:23:24,878 [DEBUG] SlackWS: on_message_channel_join does not exist for message: {'channel': 'C1WJU3ZU0', '
-# text': '<@U1U05AF5J|wm-standup-test> has joined the channel', 'type': 'message', 'inviter': 'U0286NL58', 'subtype': 'ch
-# annel_join', 'user_profile': {'real_name': '', 'name': 'wm-standup-test', 'image_72': 'https://avatars.slack-edge.com/2
-# 016-07-21/62015427159_1da65a3cf7a85e85c3cb_72.png', 'first_name': None, 'avatar_hash': '1da65a3cf7a8'}, 'ts': '14698310
-# 04.000003', 'user': 'U1U05AF5J', 'team': 'T027XPE12'}
+    def on_user_typing(self, msg):
+        """
+        When someone is typing to the bot
+        """
 
-# Someone else joins a public channel
-# 2016-07-29 16:26:19,966 [DEBUG] SlackWS: on_message_channel_join does not exist for message: {'type': 'message', 'invit
-# er': 'U0286NL58', 'ts': '1469831179.000004', 'team': 'T027XPE12', 'user': 'U0286167T', 'channel': 'C1WJU3ZU0', 'user_pr
-# ofile': {'name': 'synic', 'image_72': 'https://avatars.slack-edge.com/2016-06-24/54136624065_49ec8bc368966c152817_72.jp
-# g', 'real_name': 'Adam Olsen', 'first_name': 'Adam', 'avatar_hash': '49ec8bc36896'}, 'subtype': 'channel_join', 'text':
-#  '<@U0286167T|synic> has joined the channel'}
+    def on_file_shared(self, msg):
+        """
+        When someone shares a file
+        """
 
-# Invited to a private channel
-# 2016-07-29 16:27:29,376 [DEBUG] SlackWS: on_message_group_join does not exist for message: {'type': 'message', 'inviter
-# ': 'U0286NL58', 'ts': '1469831249.000047', 'team': 'T027XPE12', 'user': 'U0286167T', 'channel': 'G1W837CGP', 'user_prof
-# ile': {'name': 'synic', 'image_72': 'https://avatars.slack-edge.com/2016-06-24/54136624065_49ec8bc368966c152817_72.jpg'
-# , 'real_name': 'Adam Olsen', 'first_name': 'Adam', 'avatar_hash': '49ec8bc36896'}, 'subtype': 'group_join', 'text': '<@
-# U0286167T|synic> has joined the group'}
+    def on_file_public(self, msg):
+        """
+        When someone shares a file publically
+        """
+
+    def on_channel_joined(self, msg):
+        """
+        When joining an public channel
+        """
+        # {'type': 'channel_joined',
+        #  'channel': {
+        #      'members': ['U0286NL58', 'U1U05AF5J'],
+        #      'purpose': {'last_set': 0, 'creator': '', 'value': ''},
+        #      'topic': {
+        #          'last_set': 0,
+        #          'creator': '',
+        #          'value': ''},
+        #      'is_member': True,
+        #      'is_channel': True,
+        #      'creator': 'U0286NL58',
+        #      'is_archived': False,
+        #      'unread_count_display': 0,
+        #      'id': 'C1WJU3ZU0',
+        #      'name': 'wm-test2',
+        #      'is_general': False,
+        #      'created': 1469830985,
+        #      'unread_count': 0,
+        #      'latest': {
+        #          'text': '<@U0286NL58|jason> has joined the channel',
+        #          'type': 'message', 'user': 'U0286NL58',
+        #          'subtype': 'channel_join',
+        #          'ts': '1469830985.000002'},
+        #      'last_read': '1469830985.000002'}}
+
+    def on_message_channel_join(self, msg):
+        """
+        Public channel join message
+        """
+        # {'channel': 'C1WJU3ZU0',
+        #  'text': '<@U1U05AF5J|wm-standup-test> has joined the channel',
+        #  'type': 'message',
+        #  'inviter': 'U0286NL58',
+        #  'subtype': 'channel_join',
+        #  'user_profile': {
+        #      'real_name': '',
+        #      'name': 'wm-standup-test',
+        #      'image_72': 'https://avatars.slack-edge.com/2016-07-....png',
+        #      'first_name': None,
+        #      'avatar_hash': '1da65a3cf7a8'},
+        #  'ts': '1469831004.000003',
+        #  'user': 'U1U05AF5J',
+        #  'team': 'T027XPE12'}
+
+    def on_message_group_join(self, msg):
+        """
+        Private channel join message
+        """
+        # {'type': 'message',
+        #  'inviter': 'U0286NL58',
+        #  'ts': '1469831249.000047',
+        #  'team': 'T027XPE12',
+        #  'user': 'U0286167T',
+        #  'channel': 'G1W837CGP',
+        #  'user_profile': {
+        #      'name': 'synic',
+        #      'image_72': 'https://avatars.s....jpg',
+        #      'real_name': 'Adam Olsen',
+        #      'first_name': 'Adam',
+        #      'avatar_hash': '49ec8bc36896'},
+        #  'subtype': 'group_join',
+        #  'text': '<@U0286167T|synic> has joined the group'}

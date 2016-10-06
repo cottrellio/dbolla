@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # -*- mode: python -*-
 import asyncio
-import datetime
 import functools
 import logging.config
 import os
 
 
 from warmachine.config import Config
-from warmachine.connections.irc import AioIRC
+# from warmachine.connections.irc import AioIRC
 from warmachine.connections.slack import SlackWS
 
 log_config = {

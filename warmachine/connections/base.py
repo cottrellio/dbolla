@@ -1,5 +1,6 @@
 INITALIZED = 'Initalized'
 CONNECTED = 'Connected'
+CONNECTING = 'Connecting'
 
 
 class Connection(object):
