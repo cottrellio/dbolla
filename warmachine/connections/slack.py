@@ -221,7 +221,10 @@ class SlackWS(Connection):
             # This is a private message
             channel = None
         else:
-            channel = '#{}'.format(self.channel_map[msg['channel']]['name'])
+            try:
+                channel = '#{}'.format(self.channel_map[msg['channel']]['name'])
+            except KeyError:
+                channel = None
 
         retval = {
             'sender': user_nickname,
@@ -265,12 +268,15 @@ class SlackWS(Connection):
         """
         updates user's presence in ``self.user_map``
         """
-        # self.log.debug('updated_presence: {} ({}) was: {} is_now: {}'.format(
-        #     msg['user'], self.user_map[msg['user']]['name'],
-        #     self.user_map[msg['user']].get('presence', '<undefined>'),
-        #     msg['presence']
-        # ))
-        self.user_map[msg['user']]['presence'] = msg['presence']
+        try::
+            self.log.debug('updated_presence: {} ({}) was: {} is_now: {}'.format(
+                msg['user'], self.user_map[msg['user']]['name'],
+                self.user_map[msg['user']].get('presence', '<undefined>'),
+                msg['presence']
+            ))
+            self.user_map[msg['user']]['presence'] = msg['presence']
+        except KeyError:
+            pass
 
     @memoize  # the dm id should never change
     def get_dm_id_by_user(self, user_id):
